@@ -162,8 +162,7 @@ option:checked { background: var(--cell-line); color: var(--ink); }
 
 /* The device shows four orange lamps for its four preset slots, so the patcher
    shows the same four in the same order — the point is to map what is on
-   screen onto what is in your hand without counting. Babe: *"on the device are
-   4 orange dots... to sort of visually know whats going where"*.
+   screen onto what is in your hand without counting.
    Three states, because "exists" and "is selected" are different questions:
    filled = has effects in it, hollow = an empty slot, ring = the one you are
    editing. They are also the fastest way to switch. */
@@ -334,9 +333,8 @@ select.ibare { cursor: pointer; }
    left bay and the wider cell beside it. Its bay holds the engine switch
    rather than a fader, so the label rotates to read up the button the way a
    lever's travel runs up its rail — all three panels then share one left edge.
-   Babe: *"organize this audition panel to match the others below"*. The bay
-   holds a bare transport glyph, not a word — Babe: *"remove preview from the
-   button just add a > button"* — so nothing needs rotating to fit. */
+   The bay holds a bare transport glyph rather than a word, so nothing needs
+   rotating to fit. */
 .prow > .pcell.runbay { flex: 0 0 76px; padding: 8px; }
 .runbay > .run {
   flex: 1 1 auto; height: auto; width: 100%; padding: 0; font-size: 0;
@@ -360,9 +358,8 @@ select.ibare { cursor: pointer; }
 }
 /* The filename row sits under the whole prow, not inside the source cell.
    In the cell it added a line to the cell's height, which stretched the row,
-   which stretched the run button out of square — Babe: *"add the blank row
-   below the play button and panel on the right... so the button is more
-   square"*. Out here it also gets the full panel width before ellipsising. */
+   which stretched the run button out of square. Out here it also gets the
+   full panel width before ellipsising. */
 /* shake drops to the foot of its cell so it sits level with the base of the
    lever — that is the hand position you actually use it from */
 .prow > .pcell.trig > .pbtn.wide { margin-top: auto; }
@@ -568,8 +565,8 @@ select.ibare { cursor: pointer; }
    on the meter, where it means level.
 
    One question only: which slot is ARMED. Solid white for that one, dim grey
-   for the rest — Babe: *"make the white circle solid and just dim grey for the
-   others"*. Whether a slot is loaded is already carried by its filename, which
+   for the rest. Whether a slot is loaded is already carried by its filename,
+   which
    goes from muted to full ink, so the lamp does not need to say it twice. */
 .sdot {
   flex: 0 0 17px; height: 17px; line-height: 15px; text-align: center;
