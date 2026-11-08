@@ -1,5 +1,5 @@
 // FX MIC Patcher — local server.
-// Opening v2.html directly works for everything except the microphone source:
+// Opening index.html directly works for everything except the microphone source:
 // getUserMedia needs a secure context, and file:// is not one.
 //
 //   node serve.mjs              serve, open the browser when it is listening
@@ -17,7 +17,7 @@ const ROOT = import.meta.dirname;
 const args = process.argv.slice(2);
 const OPEN = !args.includes("--no-open");
 const START_PORT = Number(args.find(a => /^\d+$/.test(a))) || 5173;
-const PAGE = "v2.html";
+const PAGE = "index.html";
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json",
                 ".css": "text/css", ".wav": "audio/wav", ".svg": "image/svg+xml" };
 

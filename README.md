@@ -20,7 +20,7 @@ The .html files also open standalone by double-clicking them. The only thing
 that needs the server is the **microphone** preview source — `getUserMedia`
 requires a secure context and `file://` is not one.
 
-`v2.html` is the app. Everything lives in that one file.
+`index.html` is the app. Everything lives in that one file.
 
 ## Using it
 

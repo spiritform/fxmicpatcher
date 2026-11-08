@@ -1,6 +1,6 @@
 @echo off
 rem FX MIC Patcher launcher.
-rem The app is plain HTML, so v2.html opens on its own by double-clicking it.
+rem The app is plain HTML, so index.html opens on its own by double-clicking it.
 rem This serves it over localhost instead, which is the only way the
 rem microphone preview source can work: getUserMedia needs a secure context.
 title FX MIC Patcher
@@ -16,12 +16,12 @@ goto end
 :nonode
 echo.
 echo   Node was not found on PATH, so the local server cannot start.
-echo   Opening v2.html directly instead.
+echo   Opening index.html directly instead.
 echo.
 echo   Everything works this way except "src: microphone", which needs
 echo   a secure context. Install Node and run this again for the mic.
 echo.
-start "" "%~dp0v2.html"
+start "" "%~dp0index.html"
 timeout /t 6 >nul
 
 :end
