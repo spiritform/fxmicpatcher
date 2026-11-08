@@ -1,0 +1,2552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FX MIC Patcher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Archivo:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* FX MIC PATCHER v2 — chassis borrowed from LatentLab.
+   One screen, no scroll. Near black, separation by tone.
+   The three accents are not decoration: they are the three buttons on the
+   device. Orange selects the preset, green selects the sample, white plays. */
+:root {
+  --bg: #050505;
+  --sunk: #0c0c0c;
+  --raise: #141414;
+  --raise-2: #1c1c1c;
+  --ink: #EDE1D3;
+  --muted: #8a847a;
+  --dim: #55504a;
+  --head: #24242b;        /* a header band — always one step up from its panel */
+  --head-sunk: #16161a;
+  --cell: #1a1a1f;        /* a parameter group's surface */
+  --cell-line: #2a2a32;
+  --line-mid: #3a3a43;    /* slider rails — --raise-2 on a cell is invisible */
+  --orange: #FF6A00;      /* the preset button */
+  --green: #35D07F;       /* the sample button */
+  --white: #F2F2F2;       /* selects the sample slot */
+  --grey: #C2C2C6;        /* plays it — the device's third button */
+  --red: #EE2324;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --btn: 26px;
+  --line: 19px;
+  --band: 38px;      /* the shared height of every column's first header */
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: Archivo, system-ui, sans-serif; font-size: 15px; line-height: 1.45;
+  -webkit-user-select: none; user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+input, textarea { -webkit-user-select: text; user-select: text; }
+button { font: inherit; color: inherit; cursor: pointer; }
+p, h1, h2, h3 { margin: 0; }
+:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+
+.disp { font-family: Oswald, Archivo, sans-serif; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.tiny { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---- one screen ---- */
+.screen { height: 100svh; overflow: hidden; display: grid; grid-template-rows: minmax(0,1fr); }
+.bleed { max-width: 1760px; margin: 0 auto; width: 100%; padding: 0 16px; }
+
+/* ============================ HEADER ============================ */
+/* All three columns open with a band of the same height, so the panels and
+   rack units below them line up across the whole screen. */
+.brandbar {
+  background: var(--head-sunk); border: 1px solid var(--raise-2); border-radius: 2px;
+  padding: 4px 11px; display: flex; align-items: center; min-height: var(--band);
+}
+.card-in { display: flex; align-items: center; gap: 10px; padding: 6px 14px; flex-wrap: wrap; }
+.mark { font-size: 14px; line-height: 20px; flex: 0 0 auto; }
+.mark b { color: var(--orange); font-weight: 600; }
+.vr { width: 1px; align-self: stretch; background: var(--raise-2); margin: 0 2px; }
+.sp { flex: 1 1 auto; }
+
+.fld {
+  background: var(--raise); border: 1px solid transparent; color: var(--ink);
+  height: var(--btn); padding: 0 8px; border-radius: 2px; font: inherit; font-size: 12px; min-width: 0;
+}
+.fld:hover { border-color: var(--raise-2); }
+.fld:focus { border-color: var(--orange); outline: none; }
+select.fld { padding-right: 20px; cursor: pointer; }
+
+/* A native <select>'s popup list is drawn by the OS, not by the page. With no
+   rule of its own it inherited `color: var(--ink)` — a warm cream — onto
+   Chrome's default WHITE list, which is why the options read as unreadable
+   pale tan. `color-scheme: dark` flips the popup, the focus ring and the
+   native scrollbar inside it; the explicit option colours then pin it to the
+   chassis rather than Chrome's generic dark grey. */
+:root { color-scheme: dark; }
+option {
+  background: var(--raise-2); color: var(--ink);
+  font-size: 12px; padding: 4px 8px;
+}
+option:disabled { color: var(--dim); }
+/* Nothing styled :disabled before, so a disabled button looked identical to a
+   live one and simply did nothing when clicked. */
+.pbtn:disabled, .sgo:disabled { opacity: .3; cursor: default; }
+.pbtn:disabled:hover, .sgo:disabled:hover { border-color: transparent; color: inherit; }
+optgroup {
+  background: var(--sunk); color: var(--muted);
+  font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+}
+/* the selected row carries the control's own accent — orange is the preset
+   button on the hardware, so the preset list is the one that gets it */
+option:checked { background: var(--cell-line); color: var(--ink); }
+#presetPick option:checked { background: var(--orange); color: #0a0a0a; }
+
+.pbtn {
+  background: var(--raise); border: 1px solid transparent; height: 24px;
+  padding: 0 10px; border-radius: 2px; display: inline-flex; align-items: center; gap: 7px;
+  font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); transition: .12s var(--ease);
+}
+.pbtn:hover { background: var(--raise-2); color: var(--ink); }
+.pbtn.is-on { background: var(--orange); color: #0a0a0a; }
+.pbtn.go { background: var(--orange); color: #0a0a0a; }
+.pbtn.go:hover { background: #ff8128; color: #0a0a0a; }
+.pbtn .n { color: var(--dim); }
+.pbtn.is-on .n { color: rgba(0,0,0,.55); }
+.pbtn[disabled] { opacity: .35; cursor: not-allowed; }
+
+/* The flexbox centres the lamp against the text's LINE BOX, which includes
+   descender space the label never uses — the text is uppercase, so its ink is
+   only the cap band and sits high in that box. Geometrically centred, optically
+   low. The nudge aligns it to the caps instead. It is also the only lamp in the
+   UI, so this does not need scoping. */
+.lamp {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--dim);
+  flex: 0 0 auto; position: relative; top: -1px;
+}
+.lamp.ok { background: var(--green); }
+.lamp.warn { background: var(--orange); }
+.lamp.err { background: var(--red); }
+
+/* the preset dropdown carries the orange dot of the button it stands for */
+.ifield .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); flex: 0 0 auto; }
+
+/* ============================ RACK ============================ */
+/* the device has exactly four slots, so the rack IS the screen: four bays,
+   filled or empty. nothing has to say "chain full" — there is no fifth bay. */
+.rack {
+  min-height: 0; overflow: hidden; padding: 12px; width: 100%;
+  display: grid; grid-template-columns: 272px minmax(0,1fr) minmax(360px, 30vw); gap: 12px;
+}
+.rack.solo { grid-template-columns: 272px minmax(0,1fr); }
+.rack.solo .rail { display: none; }
+@media (max-width: 900px) { .rack { grid-template-columns: 140px minmax(0,1fr); } .rail { display: none; } }
+
+/* the OS scrollbar is light and lands like a flare on a near-black page */
+* { scrollbar-width: thin; scrollbar-color: var(--raise-2) transparent; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--raise-2); border: 3px solid transparent;
+  background-clip: padding-box; border-radius: 8px;   /* padding-box = works on any backdrop */
+}
+::-webkit-scrollbar-thumb:hover { background: var(--dim); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+.rackcol { display: flex; flex-direction: column; gap: 3px; min-height: 0; }
+.rackhead {
+  background: var(--head-sunk); border: 1px solid var(--raise-2); border-radius: 2px;
+  padding: 4px 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  min-height: var(--band);
+}
+
+/* The device shows four orange lamps for its four preset slots, so the patcher
+   shows the same four in the same order — the point is to map what is on
+   screen onto what is in your hand without counting. Babe: *"on the device are
+   4 orange dots... to sort of visually know whats going where"*.
+   Three states, because "exists" and "is selected" are different questions:
+   filled = has effects in it, hollow = an empty slot, ring = the one you are
+   editing. They are also the fastest way to switch. */
+.plamps { display: flex; align-items: center; gap: 7px; padding-right: 2px; }
+.plamp {
+  width: 11px; height: 11px; border-radius: 50%; padding: 0; cursor: pointer;
+  background: transparent; border: 1px solid var(--line-mid);
+  transition: opacity .12s var(--ease), background .12s var(--ease);
+}
+/* Brightness alone says which one is live — the ring around the active lamp
+   was a second signal for the same fact, and it made the row read as a widget
+   rather than as the device's own indicator. Lit = selected, dim = the other
+   slots, hollow = nothing in that slot yet. Opacity rather than a second
+   orange so the dim state tracks the accent if the palette moves. */
+.plamp.has { background: var(--orange); border-color: var(--orange); opacity: .3; }
+.plamp.cur { opacity: 1; }
+.plamp.cur:not(.has) { border-color: var(--orange); }
+.plamp:hover { opacity: .65; }
+.plamp.cur:hover { opacity: 1; }
+
+/* A push runs across the lamps rather than resizing the button. They are a
+   fixed size, they are already what a push is about, and the eject makes a
+   push take several seconds — long enough that it has to show something.
+
+   One lamp at a time, 1-2-3-4 and round again. Each is lit for a quarter of
+   the cycle and the delays are exactly a quarter apart, so the bright spot
+   steps cleanly rather than four lamps breathing together. The short fade is
+   what leaves a trail behind the step instead of a hard blink. The base
+   opacity is .15 because the delay means lamps 2-4 are not animating yet on
+   the first pass, and without it they would sit at full brightness until
+   their turn came. */
+@keyframes lampchase {
+  0%, 20%   { opacity: 1; }
+  38%, 100% { opacity: .15; }
+}
+.plamps.busy .plamp {
+  background: var(--orange); border-color: var(--orange);
+  opacity: .15;
+  animation: lampchase 1.2s linear infinite;
+}
+.plamps.busy .plamp:nth-child(2) { animation-delay: .3s; }
+.plamps.busy .plamp:nth-child(3) { animation-delay: .6s; }
+.plamps.busy .plamp:nth-child(4) { animation-delay: .9s; }
+
+/* prefers-reduced-motion exists for vestibular triggers — movement, parallax,
+   zoom. Nothing here travels; it is opacity on four fixed dots, which that
+   guidance treats as safe. So it is slowed and shallowed rather than killed:
+   killing it left a push with no feedback at all on a machine with the setting
+   on, which is most of what the button's changing label was for. The stagger
+   stays, because the sequence IS the thing being asked for. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes lampchase {
+    0%, 22%   { opacity: .95; }
+    45%, 100% { opacity: .35; }
+  }
+  .plamps.busy .plamp { animation-duration: 2.4s; }
+  .plamps.busy .plamp:nth-child(2) { animation-delay: .6s; }
+  .plamps.busy .plamp:nth-child(3) { animation-delay: 1.2s; }
+  .plamps.busy .plamp:nth-child(4) { animation-delay: 1.8s; }
+} 50% { opacity: .9; } }
+}
+
+/* The caption sits INSIDE the control rather than stacked above it — one row
+   instead of two, and the label stays attached to what it names. */
+.ifield {
+  display: flex; align-items: center; gap: 9px; min-width: 0;
+  background: var(--raise); border: 1px solid transparent; border-radius: 2px;
+  height: 28px; padding: 0 10px;
+}
+.ifield:hover { border-color: var(--raise-2); }
+.ifield:focus-within { border-color: var(--orange); }
+.ilabel {
+  font-size: 11px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--muted); flex: 0 0 auto;
+}
+.ifield:focus-within .ilabel { color: var(--orange); }
+.ibare {
+  background: none; border: 0; padding: 0; color: var(--ink);
+  font-size: 12.5px; min-width: 0; height: 100%;
+}
+.ibare:focus { outline: none; }
+select.ibare { cursor: pointer; }
+.rack-in { display: flex; flex-direction: column; gap: 3px; min-height: 0; overflow-y: auto; flex: 1 1 auto; }
+.spacer { flex: 1 1 auto; min-height: 0; }
+
+/* the json is the file you are actually writing — it updates as you drag */
+.rail { background: var(--sunk); border-radius: 2px; display: flex; flex-direction: column; min-height: 0; }
+.rail-h {
+  display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 12px; flex-wrap: wrap;
+  min-height: var(--band);
+  background: var(--head-sunk); border-bottom: 1px solid var(--raise-2);
+  border-radius: 2px 2px 0 0;
+}
+.rail pre.code { flex: 1 1 auto; overflow: auto; font-size: 12px; line-height: 1.65; padding: 12px 14px; }
+
+/* four slots, four equal bands — the rack fills the screen rather than
+   stacking to its content and leaving a hole underneath */
+.unit { background: var(--raise); border-radius: 2px; flex: 1 1 0; min-height: 86px; display: flex; transition: background .12s var(--ease); }
+.unit:hover { background: var(--raise-2); }
+.unit-in { flex: 1 1 auto; display: flex; flex-direction: column; gap: 9px; padding: 10px 14px; min-width: 0; }
+.unit-top {
+  display: flex; align-items: center; gap: 12px;
+  margin: -10px -14px 0; padding: 3px 14px;
+  background: var(--head); border-bottom: 1px solid var(--cell-line);
+  border-radius: 2px 2px 0 0;
+}
+
+.bay {
+  flex: 1 1 0; min-height: 0; border-radius: 2px; background: var(--sunk);
+  border: 1px dashed var(--raise-2); display: flex; align-items: center; justify-content: center;
+  transition: .12s var(--ease);
+}
+.bay:hover { border-color: var(--dim); }
+.bay button {
+  background: none; border: 0; color: var(--dim); font-size: 10px;
+  letter-spacing: .12em; text-transform: uppercase; padding: 12px 20px;
+}
+.bay:hover button { color: var(--orange); }
+
+.slotno {
+  font-family: Oswald, sans-serif; font-weight: 600; font-size: 11px; letter-spacing: .08em;
+  color: var(--dim); flex: 0 0 auto; width: 16px; text-align: center;
+}
+.unit-fx {
+  background: transparent; border: 0; color: var(--ink);
+  font-family: Oswald, sans-serif; font-weight: 600; font-size: 17px; letter-spacing: .05em;
+  /* box must clear the glyph height or Oswald's bottoms clip — see CLAUDE.md */
+  text-transform: uppercase; cursor: pointer; padding: 0; flex: 0 0 auto;
+  height: 26px; line-height: 26px;
+}
+.unit-fx:focus { outline: none; color: var(--orange); }
+.bus {
+  background: transparent; border: 0; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--dim); cursor: pointer; height: 22px; padding: 0;
+}
+.bus.on { color: #58b6ff; }
+.bus.on.b2 { color: #c58bff; }
+
+/* Groups are CELLS on a shared grid, not labels floating in the dark. Every
+   unit is the same width, so auto-fill tracks line up vertically across all
+   four rows — that alignment is what reads as structure. */
+/* Chips: used by the mod editor, the TRIG badge, the samples sheet and the
+   rail's copy button. A scripted CSS range-replace ate these once — they are
+   referenced from JS by class name, so nothing errors when they go missing,
+   the UI just quietly loses its styling. */
+.chip {
+  font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  background: var(--raise-2); color: var(--dim); border: 0; border-radius: 2px;
+  height: 19px; padding: 0 6px; line-height: 19px;
+}
+.chip.h { background: var(--orange); color: #0a0a0a; }
+.chip.s { background: #58b6ff; color: #0a0a0a; }
+.chip.l { background: #c58bff; color: #0a0a0a; }
+.chip.t { background: var(--white); color: #0a0a0a; }
+
+/* perform-panel cells: handle and trigger sit SIDE BY SIDE in one row, not
+   stacked. Stacked, the lever and the four slot rows fought over the same
+   vertical budget and the lever lost — it was down to ~123px of travel while
+   the panel below it clipped. Across, the lever stretches to the trigger's
+   full height (~310px) and the panel gets ~120px shorter, which is what the
+   monitor was short of. It is also the hardware gesture: you hold the lever
+   and hit the buttons beside it. */
+.prow { display: flex; gap: 9px; flex: 1 1 auto; min-height: 0; }
+.prow > .pcell.lever { flex: 0 0 76px; }
+.prow > .pcell:not(.lever) { flex: 1 1 auto; min-width: 0; }
+
+/* The audition panel wears the same shape as perform and monitor: a narrow
+   left bay and the wider cell beside it. Its bay holds the engine switch
+   rather than a fader, so the label rotates to read up the button the way a
+   lever's travel runs up its rail — all three panels then share one left edge.
+   Babe: *"organize this audition panel to match the others below"*. The bay
+   holds a bare transport glyph, not a word — Babe: *"remove preview from the
+   button just add a > button"* — so nothing needs rotating to fit. */
+.prow > .pcell.runbay { flex: 0 0 76px; padding: 8px; }
+.runbay > .run {
+  flex: 1 1 auto; height: auto; width: 100%; padding: 0; font-size: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+/* Both marks are DRAWN, not typed. As glyphs, ▶ and ■ sit at different
+   heights in the em box — centring the line box centred the box, not the ink,
+   which is why the square read low while the triangle looked fine. A box and a
+   border-triangle have no metrics to disagree about. */
+.runbay > .run::before {
+  content: ""; display: block;
+  width: 0; height: 0;
+  border-left: 20px solid currentColor;
+  border-top: 13px solid transparent;
+  border-bottom: 13px solid transparent;
+  margin-left: 4px;        /* a triangle's visual mass sits left of its box */
+}
+.runbay > .run.on::before {
+  width: 21px; height: 21px; border: 0; border-radius: 1px;
+  background: currentColor; margin-left: 0;
+}
+/* The filename row sits under the whole prow, not inside the source cell.
+   In the cell it added a line to the cell's height, which stretched the row,
+   which stretched the run button out of square — Babe: *"add the blank row
+   below the play button and panel on the right... so the button is more
+   square"*. Out here it also gets the full panel width before ellipsising. */
+/* shake drops to the foot of its cell so it sits level with the base of the
+   lever — that is the hand position you actually use it from */
+.prow > .pcell.trig > .pbtn.wide { margin-top: auto; }
+.pcell { gap: 9px; }
+.pcell > .gl { margin-bottom: 0; }
+.lever { min-height: 120px; }   /* never let the fader collapse */
+/* 76px cannot hold "handle" and the value on one baseline, so the lever's
+   label stacks and centres over its own fader instead of spanning the cell */
+.lever > .gl { flex-direction: column; align-items: center; gap: 1px; }
+
+/* Parameters are vertical faders in groups, like a channel strip. Every
+   parameter shows at once — unset ones are dimmed rather than hidden, so the
+   whole surface of an effect is visible without clicking anything. */
+.prms { display: flex; flex-wrap: wrap; gap: 7px; align-items: stretch; flex: 1 1 auto; min-width: 0; }
+.grp {
+  background: var(--cell); border: 1px solid var(--cell-line); border-radius: 2px;
+  padding: 8px 10px 9px; display: flex; flex-direction: column; min-width: 0;
+}
+.gl {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+  font-size: 10px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 8px;
+}
+.gp { display: flex; gap: 5px; align-items: stretch; flex: 1 1 auto; }
+
+.fader { width: 48px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.fval {
+  width: 100%; text-align: center; background: none; border: 0; padding: 0;
+  font-size: 10.5px; color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.fval:focus { outline: none; color: var(--orange); }
+.fader.off .fval { color: var(--dim); }
+
+.ftrack {
+  position: relative; flex: 1 1 auto; min-height: 52px; width: 22px;
+  background: #26262c; border-radius: 2px; overflow: hidden;
+}
+.ffill { position: absolute; left: 0; right: 0; bottom: 0; background: #4a4a54; }
+.fader.on .ffill { background: var(--ink); }
+.fader.is-mod .ffill { background: var(--orange); }
+/* the real control sits invisible on top: full styling, but still a range
+   input, so keyboard and accessibility come for free */
+.ftrack input[type=range] {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0;
+  opacity: 0; cursor: ns-resize; writing-mode: vertical-lr; direction: rtl;
+}
+.fname {
+  width: 100%; background: none; border: 0; padding: 0; text-align: center;
+  font-size: 9px; letter-spacing: .02em; text-transform: uppercase; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fader.off .fname { color: var(--dim); }
+.fname:hover { color: var(--orange); }
+
+.fmods { display: flex; gap: 2px; justify-content: center; min-height: 13px; }
+.fchip {
+  width: 13px; height: 13px; line-height: 13px; border-radius: 2px; border: 0; padding: 0;
+  font-size: 8px; font-weight: 700; text-transform: uppercase;
+  background: var(--raise-2); color: var(--dim);
+}
+.fchip.h { background: var(--orange); color: #0a0a0a; }
+.fchip.s { background: #58b6ff; color: #0a0a0a; }
+.fchip.l { background: #c58bff; color: #0a0a0a; }
+.fchip.add { opacity: 0; transition: opacity .12s var(--ease); }
+.fader:hover .fchip.add, .fchip.add:focus-visible { opacity: 1; }
+.ghost:hover { color: var(--orange); }
+.ghost::before { content: "+ "; }
+
+.unit-end { display: flex; align-items: center; gap: 2px; margin-left: auto; flex: 0 0 auto; }
+.ib { background: none; border: 0; color: var(--dim); width: 23px; height: 23px; border-radius: 2px; font-size: 11px; line-height: 1; padding: 0; }
+.ib:hover { background: var(--raise); color: var(--ink); }
+.ib[disabled] { opacity: .25; cursor: default; }
+.ib.kill:hover { color: var(--red); }
+
+
+/* ============ TRANSPORT — the left column, not a bottom bar ============
+   The handle is a vertical lever on the hardware, so it is one here too, and
+   it takes all the height left over: it is the control you reach for most. */
+.deckcol { display: flex; flex-direction: column; gap: 3px; min-height: 0; overflow-y: auto; }
+.dpanel {
+  background: var(--sunk); border-radius: 2px; padding: 10px;
+  display: flex; flex-direction: column; gap: 9px; min-height: 0;
+}
+.dpanel.grow { flex: 1 1 0; }   /* basis 0 so the growers split evenly, not by content */
+.plabel { letter-spacing: .16em; }
+
+/* One header band, used by every panel — the config.json rail's header is the
+   pattern. It bleeds to the panel edges and sits a step up in tone from the
+   body beneath it, so a panel reads as a titled block rather than a label
+   floating above some controls. */
+.phead {
+  margin: -10px -10px 0; padding: 8px 10px;
+  background: var(--head-sunk); border-bottom: 1px solid var(--raise-2);
+  border-radius: 2px 2px 0 0;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+}
+
+.twobtn { display: flex; gap: 6px; }
+.twobtn .pbtn { flex: 1 1 0; justify-content: center; }
+/* the whole panel is the drop target; the two buttons are the explicit path */
+.dpanel.over { outline: 1px dashed var(--orange); outline-offset: -3px; background: rgba(255,106,0,.06); }
+.say:empty, .sdnote:empty { display: none; }
+/* The loaded filename used to collapse when empty and wrap to two lines when
+   long, so loading a file grew the panel and every panel below it moved. It
+   now holds exactly ONE line's worth of space at all times, full stop — empty
+   before you load anything, ellipsised if the name is long. The whole name is
+   on the title. Nothing here may ever change the panel's height. */
+.dropname {
+  text-align: center; font-size: 10px; line-height: 13px; height: 13px;
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 0 0 auto;
+}
+
+/* handle and the buttons you press WITH it share one panel — they were a
+   column apart before, which is no good when you perform with both hands */
+.run {
+  /* grey, because grey is the play button on the device — orange selects the
+     preset, white selects the sample slot, grey fires it. Green has no button
+     of its own on the hardware and now only means LEVEL (meter, monitor). */
+  background: var(--grey); color: #0a0a0a; border: 0; height: 30px; width: 100%;
+  border-radius: 2px; font-family: Oswald, sans-serif; font-weight: 600; font-size: 11px;
+  letter-spacing: .12em; text-transform: uppercase; flex: 0 0 auto;
+}
+.run.on { background: var(--red); color: #fff; }
+.dpanel .fld { width: 100%; }
+
+.vh { flex: 1 1 auto; min-height: 96px; display: flex; align-items: stretch; justify-content: center; }
+.vh input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  writing-mode: vertical-lr; direction: rtl;          /* bottom = 0, top = pushed */
+  width: 58px; height: 100%; padding: 0; cursor: grab; border-radius: 2px;
+  /* a slot down the middle of a wide grab area, like a channel-strip fader */
+  background: linear-gradient(to right,
+    transparent calc(50% - 3px), #33333a calc(50% - 3px),
+    #33333a calc(50% + 3px), transparent calc(50% + 3px));
+}
+.vh input[type=range]:active { cursor: grabbing; }
+.vh input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 58px; height: 26px; border-radius: 3px; border: 0;
+  background: linear-gradient(180deg, #ff8f33 0%, #f96f0d 52%, #d25600 100%);
+  box-shadow: 0 2px 7px rgba(0,0,0,.6);
+}
+/* The monitor's level is the same fader in grey. Orange is the handle, which
+   goes in the file; grey is monitoring, which does not. Keeping the shape and
+   changing only the accent is what makes the two panels read as one system. */
+.vh.vol input[type=range]::-webkit-slider-thumb {
+  background: linear-gradient(180deg, #DCDCE0 0%, #C2C2C6 52%, #9A9AA0 100%);
+}
+.vh.vol input[type=range]::-moz-range-thumb {
+  width: 58px; height: 26px; border-radius: 3px; border: 0; background: var(--grey);
+}
+.vh input[type=range]::-moz-range-thumb { width: 58px; height: 26px; border-radius: 3px; background: var(--orange); border: 0; }
+
+.hw { width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0; font-size: 10px; font-weight: 700; color: #0a0a0a; }
+.hw.w { background: var(--white); } .hw.g { background: var(--green); }
+.hw:active { transform: scale(.9); }
+
+/* a labelled cluster — the output slider read as a mystery control until the
+   label, the fader and its meter were one block instead of three strays */
+.ctl { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
+.ctl > .tiny { display: flex; align-items: baseline; gap: 5px; }
+.ctl em { font-style: normal; color: var(--dim); letter-spacing: .04em; text-transform: none; font-size: 9px; }
+.hval { color: var(--orange); font-size: 13px; font-weight: 600; }
+/* same readout, the lever's own accent: orange goes in the file, grey does not */
+.vval { color: var(--grey); font-size: 13px; font-weight: 600; }
+.pbtn.wide { width: 100%; justify-content: center; }
+/* four sample slots, visible at once — the device cycles them with the green
+   button, but there is no reason to hide three of them behind a counter */
+.slots { display: flex; flex-direction: column; gap: 2px; }
+/* the selected slot's file settings, inline under the rows */
+/* This block sits above SHAKE, which is pinned to the foot of the cell with
+   margin-top:auto — so every pixel added here pushes SHAKE out of the panel
+   rather than making the cell taller. It is the tightest space in the UI. */
+.sdetail { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid var(--cell-line); }
+.sdetail .fld { width: 100%; height: 24px; font-size: 11px; }
+.sdrow { display: flex; gap: 5px; align-items: center; }
+.sdrow .chip { flex: 1 1 0; justify-content: center; text-align: center; }
+.sdrow .fld { flex: 1 1 auto; min-width: 0; }
+/* ONE line, always. It gains "— over" when the budget is blown, which wrapped
+   to a second line and pushed SHAKE out of the panel exactly when you most
+   wanted to read it. */
+.sdnote {
+  color: var(--dim); line-height: 13px; height: 13px; text-transform: none;
+  letter-spacing: .02em; font-size: 9.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto;
+}
+.sdnote.over { color: var(--red); }
+.srow.muted { opacity: .4; }
+.sname.empty { font-style: italic; }
+/* shake is a momentary control you hit while performing, so it reads as one */
+.pbtn.wide {
+  background: var(--orange); color: #0a0a0a; border-color: var(--orange);
+  font-weight: 700;
+}
+.pbtn.wide:hover { background: #ff8128; color: #0a0a0a; }
+.pbtn.wide:active { transform: scale(.97); }
+.srow { display: flex; align-items: center; gap: 7px; padding: 3px 4px; border-radius: 2px; }
+.srow.on { background: rgba(242,242,242,.07); }
+
+/* The device carries a SECOND lamp strip for the sample slots, below the FX
+   one, and its lamps are white circles — so these are white circles. White
+   rather than green because white is what the hardware uses here. Green stays
+   on the meter, where it means level.
+
+   One question only: which slot is ARMED. Solid white for that one, dim grey
+   for the rest — Babe: *"make the white circle solid and just dim grey for the
+   others"*. Whether a slot is loaded is already carried by its filename, which
+   goes from muted to full ink, so the lamp does not need to say it twice. */
+.sdot {
+  flex: 0 0 17px; height: 17px; line-height: 15px; text-align: center;
+  border-radius: 50%; box-sizing: border-box;
+  font-size: 9px; font-weight: 700; font-style: normal;
+  background: var(--line-mid); border: 1px solid var(--line-mid); color: var(--muted);
+  transition: background .12s var(--ease), color .12s var(--ease);
+}
+.srow.on .sdot { background: var(--white); border-color: var(--white); color: #0a0a0a; }
+.sname {
+  flex: 1 1 auto; min-width: 0; background: none; border: 0; padding: 0; text-align: left;
+  font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.srow.loaded .sname { color: var(--ink); }
+.sname:hover { color: var(--orange); }
+.sgo {
+  flex: 0 0 20px; height: 20px; border-radius: 50%; border: 0; padding: 0;
+  font-size: 8px; background: var(--raise-2); color: var(--muted);
+}
+.sgo:hover:not([disabled]) { background: var(--white); color: #0a0a0a; }
+.sgo[disabled] { opacity: .25; cursor: default; }
+.phead .num { color: var(--green); font-size: 13px; font-weight: 600; }
+/* the monitor is not part of the performance — it is what you watch, not what
+   you touch — so it gets a real gap above it rather than the deck's 3px seam */
+#monitor { margin-top: 10px; }
+.mfoot { color: var(--dim); line-height: 1.35; text-transform: none; letter-spacing: .02em; font-size: 9.5px; }
+
+/* stereo ladder: two columns of dashes, filling from the bottom */
+.meters { flex: 1 1 auto; min-height: 84px; display: flex; gap: 7px; }
+.mcol { flex: 1 1 0; display: flex; flex-direction: column-reverse; gap: 2px; min-height: 0; }
+.seg { flex: 1 1 0; min-height: 8px; border-radius: 1px; background: var(--line-mid); opacity: .35; }
+/* Each block carries its own colour, set once when the ladder is built, so the
+   meter reads as a ramp from green up through amber to red rather than three
+   flat zones with a hard step between them. The curve keeps the low blocks
+   properly green and spends the colour near the top, where it matters. */
+.seg.on { opacity: 1; background: var(--sc, var(--green)); }
+/* peak hold: the highest dash recently touched, left behind as it falls */
+.seg.hold { opacity: 1; background: var(--ink); }
+.mscale { display: flex; gap: 7px; }
+.mscale .tiny { flex: 1 1 0; text-align: center; color: var(--dim); font-size: 9px; }
+/* the meters cell keeps its ladder hard against the cell floor */
+.pcell.mcell > .mscale { margin-top: 6px; }
+/* The deck column is exactly full — every panel sits at its min-height — so a
+   status line appearing in the normal flow shoves the rack down and springs it
+   back, which is what made play/stop feel like it jolted. #say is transient by
+   nature, so it floats over a strip of reserved space at the foot of its own
+   panel: the space is always there whether or not there is a message, and the
+   layout never moves. */
+#auditionPanel { position: relative; padding-bottom: 24px; }
+.say {
+  position: absolute; left: 10px; right: 10px; bottom: 5px;
+  font-size: 10px; line-height: 1.3; color: var(--dim);
+  max-height: 26px; overflow: hidden; pointer-events: none;
+}
+
+/* ============================ POPOVERS ============================ */
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 90; }
+.pop {
+  position: fixed; z-index: 100; background: var(--raise); border: 1px solid var(--raise-2);
+  border-radius: 3px; box-shadow: 0 16px 48px rgba(0,0,0,.7); min-width: 230px;
+}
+.pop-h { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--raise-2); }
+.pop-b { padding: 11px; display: flex; flex-direction: column; gap: 9px; }
+.pop-row { display: flex; align-items: center; gap: 9px; }
+.pop-row > .tiny { flex: 0 0 52px; }
+.pop-row input[type=range] { flex: 1 1 auto; accent-color: var(--orange); }
+.pop-row .pv { width: 38px; text-align: right; font-size: 11px; background: transparent; border: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
+.menu { display: flex; flex-direction: column; padding: 4px; min-width: 150px; }
+.menu button {
+  background: none; border: 0; text-align: left; padding: 7px 9px; border-radius: 2px;
+  font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+  display: flex; align-items: center; gap: 8px;
+}
+.menu button:hover { background: var(--raise-2); color: var(--ink); }
+.menu button .sw { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.menu .sep { height: 1px; background: var(--raise-2); margin: 4px 0; }
+
+.sheet {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 94vw); z-index: 100;
+  background: var(--sunk); border-left: 1px solid var(--raise-2);
+  display: flex; flex-direction: column;
+}
+.sheet-h { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--raise-2); }
+.sheet-b { flex: 1 1 auto; overflow: auto; }
+pre.code {
+  margin: 0; padding: 14px; color: #cfc6ba;
+  font: 11.5px/1.7 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  white-space: pre-wrap; word-break: break-word; -webkit-user-select: text; user-select: text;
+}
+/* the value you are dragging lights up in the file as it changes */
+@keyframes litup { from { background: var(--orange); color: #0a0a0a; } to { background: transparent; } }
+.code .lit { animation: litup 620ms var(--ease); border-radius: 2px; }
+.code .k { color: #7fd1ff; } .code .s { color: var(--green); } .code .n { color: #ffb020; }
+.code .p { color: var(--dim); } .code .fx { color: var(--orange); font-weight: 600; }
+
+.note { display: flex; gap: 9px; padding: 9px 12px; border-bottom: 1px solid var(--raise-2); font-size: 12px; align-items: flex-start; color: var(--muted); }
+.note .ic { font-size: 9px; font-weight: 700; letter-spacing: .08em; flex: 0 0 30px; padding-top: 2px; }
+.note.err .ic { color: var(--red); } .note.warn .ic { color: var(--orange); } .note.ok .ic { color: var(--green); }
+.note code { color: var(--ink); font-family: ui-monospace, monospace; }
+
+.bar { height: 5px; background: var(--raise-2); border-radius: 3px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--green); }
+.bar.over > i { background: var(--red); }
+.hide { display: none !important; }
+</style>
+</head>
+<body>
+<div class="screen">
+
+  <!-- ===================== HEADER ===================== -->
+
+  <!-- ===================== RACK ===================== -->
+  <main class="rack" id="rackWrap">
+
+    <aside class="deckcol">
+      <div class="brandbar"><span class="mark disp">FX MIC <b>PATCHER</b></span></div>
+
+      <div class="dpanel" id="auditionPanel">
+        <div class="phead"><span class="tiny plabel">audition</span></div>
+        <div class="prow">
+          <div class="grp pcell runbay">
+            <button class="run" id="btnRun" title="preview on/off — an approximation for auditioning, not an emulation of the device. The browser will not make a sound until you ask it to, so the engine has to be switched on by hand" aria-label="start preview"></button>
+          </div>
+
+          <div class="grp pcell">
+            <div class="twobtn">
+              <button class="pbtn" id="btnInput" title="load a .wav to run through the chain as the audition source">wav</button>
+              <button class="pbtn" id="btnImport" title="load a config.json and edit it — this REPLACES the presets you have open">json</button>
+            </div>
+            <select class="fld" id="srcSel" title="what the preview runs through the chain">
+              <optgroup label="file"><option value="file">wav file</option></optgroup>
+              <optgroup label="live input" id="inGroup">
+                <option value="mic" selected>microphone&hellip;</option>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+        <span class="dropname" id="dropName"></span>
+        <span class="say" id="say"></span>
+      </div>
+
+      <div class="dpanel grow" style="flex-grow:1.2;min-height:372px">
+        <div class="phead"><span class="tiny plabel">perform</span></div>
+
+        <div class="prow">
+          <div class="grp pcell lever">
+            <span class="gl"><span>handle</span><span class="hval num" id="handleVal">0%</span></span>
+            <div class="vh">
+              <input type="range" id="handlePos" min="0" max="1" step="0.001" value="0">
+            </div>
+          </div>
+
+          <div class="grp pcell trig">
+            <span class="gl"><span>trigger</span><button class="chip" id="btnCustom">custom</button></span>
+            <div class="slots" id="slots"></div>
+            <div class="sdetail" id="slotDetail"></div>
+            <button class="pbtn wide" id="btnShake">shake</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="dpanel grow" id="monitor" style="flex-grow:.8;min-height:228px">
+        <div class="phead"><span class="tiny plabel">monitor</span></div>
+        <div class="prow">
+          <div class="grp pcell lever">
+            <span class="gl"><span>level</span><span class="vval num" id="volVal">50</span></span>
+            <div class="vh vol">
+              <input type="range" id="masterVol" min="0" max="1" step="0.01" value="0.5">
+            </div>
+          </div>
+
+          <div class="grp pcell mcell">
+            <span class="gl"><span>meter</span></span>
+            <div class="meters">
+              <div class="mcol" id="meterL"></div>
+              <div class="mcol" id="meterR"></div>
+            </div>
+            <div class="mscale"><span class="tiny">L</span><span class="tiny">R</span></div>
+          </div>
+        </div>
+        <span class="tiny mfoot">preview volume &middot; not part of the config</span>
+      </div>
+
+    </aside>
+
+    <div class="rackcol">
+      <div class="rackhead">
+        <div class="ifield">
+          <span class="ilabel">pack</span>
+          <input class="ibare" id="packName" placeholder="untitled" style="width:118px">
+        </div>
+        <div class="ifield">
+          <span class="ilabel">preset</span>
+          <i class="dot"></i>
+          <select class="ibare" id="presetPick"></select>
+        </div>
+        <div class="ifield">
+          <span class="ilabel">name</span>
+          <input class="ibare" id="presetName" placeholder="untitled preset" style="width:146px">
+        </div>
+        <span style="flex:1"></span>
+        <div class="plamps" id="plamps" title="the four preset slots, as they sit on the device"></div>
+      </div>
+      <div class="rack-in" id="rack"></div>
+    </div>
+    <aside class="rail" id="rail">
+      <div class="rail-h">
+        <span class="tiny plabel">config.json</span>
+        <span style="flex:1"></span>
+        <button class="pbtn" id="btnChecks"><i class="lamp ok" id="chkLamp"></i><span id="chkTxt">clear</span></button>
+        <button class="pbtn go" id="btnPush">push</button>
+        <button class="pbtn" id="btnMore">&#8943;</button>
+      </div>
+      <pre class="code" id="railCode"></pre>
+    </aside>
+  </main>
+</div>
+
+<input type="file" id="fileImport" accept=".json,application/json" class="hide">
+<input type="file" id="srcFile" accept="audio/*,.wav" class="hide">
+<div id="layer"></div>
+
+<script>
+"use strict";
+
+/* =========================================================================
+   SPEC — reconciled from the on-device readme (newest), the web guide
+   (predates fw 1.0.9) and the EP-2350 release log.
+   param: [min, max, previewDefault, isFloat]
+   ========================================================================= */
+const ONCE_PER_CHAIN = ["DELAY", "HARMONY", "REVERB", "SSB"];
+const EFFECTS = {
+  BALANCE:   { params: { "balance": [0, 1, 0.5, 1] } },
+  DELAY:     { params: {
+      "time": [0, 1.1, 0.3, 1], "lowpass-cutoff": [0, 1, 1, 1], "highpass-cutoff": [0, 1, 0, 1],
+      "wet-level": [0, 1, 0.5, 1], "dry-level": [0, 1, 1, 1], "echo": [0, 1, 0.4, 1],
+      "cross-feed": [0, 1, 0, 1], "balance": [0, 1, 0.5, 1] } },
+  DIST:      { params: {
+      "amount": [0, 40, 8, 1], "highpass-cutoff": [0, 1, 0, 1],
+      "lowpass-cutoff": [0, 1, 1, 1], "mix": [0, 1, 1, 1] } },
+  EQUALIZER: { params: { "cutoff": [0, 1, 0.5, 1], "Q": [0, 1, 0.3, 1], "gain": [-1, 1, 0, 1] } },
+  HARMONY:   { params: { "dry-level": [0, 1, 0.5, 1], "pitch": [0.5, 2, 1.5, 1] } },
+  HIGHPASS:  { params: { "cutoff": [0, 1, 0, 1], "Q": [0, 1, 0.2, 1] } },
+  LOWPASS:   { params: { "cutoff": [0, 1, 1, 1], "Q": [0, 1, 0.2, 1] } },
+  RING:      { params: { "frequency": [0, 20000, 220, 1], "mix": [0, 1, 1, 1] } },
+  REVERB:    { params: {
+      "dry-level": [0, 1, 1, 1], "wet-level": [0, 1, 0.5, 1], "time": [0, 1, 0.5, 1],
+      "spring-mix": [0, 1, 0, 1], "highpass-cutoff": [0, 1, 0, 1] } },
+  SAMPLE:    { params: {
+      "speed": [0, 4, 1, 1], "pitch": [-24, 24, 0, 1],
+      "level": [0, 1, 1, 1], "balance": [0, 1, 0.5, 1] } },
+  SSB:       { params: { "frequency": [-20000, 20000, 120, 1] } }
+};
+/* TE lists parameters in one flat run. These groupings are mine — they are how
+   the parameters behave, not anything the device enforces, and they exist so a
+   row like DELAY's eight reads as three ideas instead of eight words. */
+const GROUPS = {
+  BALANCE:   [["mix", ["balance"]]],
+  DELAY:     [["time", ["time", "echo", "cross-feed"]],
+              ["tone", ["lowpass-cutoff", "highpass-cutoff"]],
+              ["mix",  ["wet-level", "dry-level", "balance"]]],
+  DIST:      [["drive", ["amount"]],
+              ["tone",  ["highpass-cutoff", "lowpass-cutoff"]],
+              ["mix",   ["mix"]]],
+  EQUALIZER: [["band", ["cutoff", "Q", "gain"]]],
+  HARMONY:   [["pitch", ["pitch"]], ["mix", ["dry-level"]]],
+  HIGHPASS:  [["filter", ["cutoff", "Q"]]],
+  LOWPASS:   [["filter", ["cutoff", "Q"]]],
+  RING:      [["carrier", ["frequency"]], ["mix", ["mix"]]],
+  REVERB:    [["space", ["time", "spring-mix"]],
+              ["tone",  ["highpass-cutoff"]],
+              ["mix",   ["wet-level", "dry-level"]]],
+  SAMPLE:    [["play", ["speed", "pitch"]], ["mix", ["level", "balance"]]],
+  SSB:       [["shift", ["frequency"]]]
+};
+/* any parameter a grouping forgets still gets drawn, under "other" */
+function groupsFor(effect) {
+  const all = Object.keys(EFFECTS[effect].params);
+  const defined = GROUPS[effect] || [];
+  const seen = new Set(defined.flatMap(g => g[1]));
+  const extra = all.filter(n => !seen.has(n));
+  return extra.length ? defined.concat([["other", extra]]) : defined;
+}
+
+/* A 40px fader cannot hold "highpass-cutoff". These are caption-only; the real
+   key still goes in the file, and the full name stays in the tooltip. */
+const SHORT = {
+  "dry-level": "dry", "wet-level": "wet", "lowpass-cutoff": "lp", "highpass-cutoff": "hp",
+  "cross-feed": "x-fd", "spring-mix": "sprg", "balance": "bal", "frequency": "freq",
+  "amount": "amt", "cutoff": "cut", "speed": "spd", "level": "lvl"
+};
+const shortName = n => SHORT[n] || n;
+
+const LFO_SHAPES = ["sine", "square", "sawtooth", "random"];
+const PLAYMODES = ["oneshot", "hold", "startstop"];
+
+/* ~1MB buys ONE 462KB stereo 48k sample, or four usable lo-fi ones. The device
+   takes 8/16/24-bit and up to 96kHz, so rate, depth and channel count are the
+   three levers — and lo-fi on a sample you trigger through a distortion chain
+   is a sound, not just a compromise. */
+const FITS = [
+  { id: "orig",  label: "original",            rate: 0,     bits: 0,  mono: false },
+  { id: "s48",   label: "48k · 16 · stereo",   rate: 48000, bits: 16, mono: false },
+  { id: "m44",   label: "44k · 16 · mono",     rate: 44100, bits: 16, mono: true  },
+  { id: "m32",   label: "32k · 16 · mono",     rate: 32000, bits: 16, mono: true  },
+  { id: "m22",   label: "22k · 16 · mono",     rate: 22050, bits: 16, mono: true  },
+  { id: "m16",   label: "16k · 8 · mono",      rate: 16000, bits: 8,  mono: true  },
+  { id: "m11",   label: "11k · 8 · mono",      rate: 11025, bits: 8,  mono: true  },
+  { id: "m8",    label: "8k · 8 · mono",       rate: 8000,  bits: 8,  mono: true  }
+];
+const fitOf = id => FITS.find(f => f.id === id) || FITS[0];
+
+/* A wav the device will take, written by hand: OfflineAudioContext does the
+   resample and the downmix, then the samples are quantised to 8 or 16 bit.
+   8-bit wav PCM is UNSIGNED (0..255) while 16-bit is signed — getting that
+   backwards gives you silence with a DC thump, not an error. */
+function wavBytes(buf, bits) {
+  const ch = buf.numberOfChannels, n = buf.length, rate = buf.sampleRate;
+  const bps = bits >> 3, dataLen = n * ch * bps;
+  const out = new ArrayBuffer(44 + dataLen), v = new DataView(out);
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + dataLen, true); str(8, "WAVE");
+  str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, ch, true); v.setUint32(24, rate, true);
+  v.setUint32(28, rate * ch * bps, true); v.setUint16(32, ch * bps, true);
+  v.setUint16(34, bits, true); str(36, "data"); v.setUint32(40, dataLen, true);
+
+  const chans = []; for (let c = 0; c < ch; c++) chans.push(buf.getChannelData(c));
+  let o = 44;
+  for (let i = 0; i < n; i++) {
+    for (let c = 0; c < ch; c++) {
+      const x = Math.max(-1, Math.min(1, chans[c][i]));
+      if (bits === 8) v.setUint8(o, Math.round((x + 1) * 127.5));
+      else v.setInt16(o, Math.round(x < 0 ? x * 32768 : x * 32767), true);
+      o += bps;
+    }
+  }
+  return new Uint8Array(out);
+}
+
+async function encodeSample(src, fit) {
+  if (!src) return null;
+  if (!fit.rate) return wavBytes(src, 16);          /* "original" still has to be a wav */
+  const ch = fit.mono ? 1 : src.numberOfChannels;
+  const len = Math.max(1, Math.ceil(src.duration * fit.rate));
+  const off = new OfflineAudioContext(ch, len, fit.rate);
+  const node = off.createBufferSource(); node.buffer = src;
+  node.connect(off.destination); node.start();
+  return wavBytes(await off.startRendering(), fit.bits);
+}
+
+/* Re-encode a slot, then decode the RESULT back for preview, so what you hear
+   is what the device gets — including the aliasing and the quantisation. */
+async function refitSlot(i) {
+  const s = state.samples[i];
+  if (!sampleSrc[i]) return;
+  try {
+    const bytes = await encodeSample(sampleSrc[i], fitOf(s.fit));
+    sampleData[i] = bytes; s.bytes = bytes.length;
+    ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+    sampleBufs[i] = await ctx.decodeAudioData(bytes.slice().buffer);
+  } catch (e) { say("could not re-encode slot " + (i + 1) + ": " + e.message); }
+}
+
+/* Step every loaded slot down together until the four of them fit. Quality is
+   a shared budget, so fitting them one at a time just starves the last one. */
+async function fitAll() {
+  const live = state.samples.map((s, i) => i).filter(i => sampleSrc[i] && state.samples[i].on);
+  if (!live.length) { say("no slots loaded"); return; }
+  for (let step = 0; step < FITS.length; step++) {
+    live.forEach(i => { state.samples[i].fit = FITS[step].id; });
+    for (const i of live) await refitSlot(i);
+    const total = live.reduce((a, i) => a + state.samples[i].bytes, 0);
+    if (total <= SIZE_BUDGET) {
+      say(`${live.length} slot${live.length > 1 ? "s" : ""} at ${FITS[step].label} — ${kb(total)} of ~1 MB`);
+      renderAll(); return;
+    }
+  }
+  say("even at 8k mono the loaded slots do not fit — shorten one or drop it");
+  renderAll();
+}
+const MAX_ROWS = 4, MAX_PRESETS = 4, MAX_SAMPLES = 4, SIZE_BUDGET = 1024 * 1024;
+
+const step = (a, b) => (b - a > 100 ? 1 : b - a > 10 ? 0.1 : 0.01);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const round = v => Math.round(Number(v) * 1000) / 1000;
+
+/* =========================================================================
+   STATE
+   ========================================================================= */
+const blankPreset = () => ({
+  enabled: false, name: "", comment: "", list: [],
+  handle: { on: false, row: 0, param: "", depth: 0.6, target: "" },
+  shake:  { on: false, row: 0, param: "", depth: 1.0 },
+  lfo:    { on: false, row: 0, param: "", depth: 1.0, shape: "sine", speed: 4.0, phase: 0 },
+  trigger:{ on: false, row: 0 }
+});
+const state = {
+  name: "MY PACK",
+  presets: [blankPreset(), blankPreset(), blankPreset(), blankPreset()],
+  useSamples: false,
+  samples: [0,1,2,3].map(i => ({ on:false, file:(i+1)+".wav", playmode:"oneshot", duck:null, bytes:0, fit:"orig" })),
+  cur: 0
+};
+const P = () => state.presets[state.cur];
+const MODKEY = { handle: "h", shake: "s", lfo: "l" };
+
+const $ = s => document.querySelector(s);
+const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
+const say = t => { $("#say").textContent = t || ""; };
+
+/* ---------------- push to the fx-mic disk ----------------
+   USB on this device is a disk, not a link, and the device only re-reads its
+   settings when the volume is EJECTED. By hand that is download -> Save As ->
+   find it -> copy -> eject; five steps, and the Save As dialog is a native
+   window the page cannot reach. serve.mjs does the write and the eject, so
+   this is one button. It needs the server, so it greys out on file://. */
+let disk = null, seen = null;
+
+async function pollDisk() {
+  const b = $("#btnPush"); if (!b) return;
+  try {
+    const r = await fetch("/device", { cache: "no-store" });
+    const j = await r.json();
+    disk = j.ok ? j.disk : null;
+    seen = j.seen || [];
+  } catch { disk = null; seen = null; }   /* opened as a file, or server down */
+  b.disabled = !disk;
+  if (disk) {
+    b.title = `write config.json to ${disk.id} (${disk.name}) and eject — the device reloads its settings on eject, so the eject IS the apply`;
+  } else if (seen === null) {
+    b.title = "no server — open this through serve.mjs (start.bat), not by double-clicking the file";
+  } else if (seen.length) {
+    /* a dim button with no reason is a dead end. Say what WAS plugged in and
+       which test it failed, so the next move is obvious. */
+    b.title = "not recognised as an fx-mic disk: " + seen.map(c =>
+      `${c.id} ${c.label ? `"${c.label}"` : "(no label)"}` +
+      (c.hasConfig ? "" : ", no config.json at its root") +
+      (c.small ? "" : ", too large")).join("; ");
+  } else {
+    b.title = "no fx-mic disk found — plug the device in over USB and give it a moment to mount";
+  }
+}
+
+async function pushDevice() {
+  const b = $("#btnPush");
+  if (!b || b.disabled) return;
+  /* The button keeps its label. Swapping it for "pushing…" / "ejected" /
+     "written" changed its width, so the whole rail header twitched twice on
+     every push — and those words duplicated what the status line already says
+     in full. Progress shows on the preset lamps instead, which are already the
+     thing a push is about and are a fixed size. */
+  b.disabled = true;
+  $("#plamps").classList.add("busy");
+  try {
+    /* the wavs ride along with the config: a config naming 1.wav is useless if
+       1.wav never reaches the disk, and the reverse wastes the budget */
+    const samples = [];
+    state.samples.forEach((sl, i) => {
+      if (!sl.on || !sampleData[i] || !sl.file) return;
+      let bin = ""; const u = sampleData[i];
+      for (let k = 0; k < u.length; k += 0x8000) bin += String.fromCharCode.apply(null, u.subarray(k, k + 0x8000));
+      samples.push({ file: sl.file, b64: btoa(bin) });
+    });
+    const r = await fetch("/device", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ config: fmt(build(), 0) + "\n", samples })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    const what = (j.wrote || []).join(", ") || "config.json";
+    /* The eject is the apply. If it did not happen the files are on the disk
+       and the device has not read them, which looks exactly like a push that
+       did nothing — so say so plainly rather than reporting a write. */
+    say(j.ejected
+      ? `${what} → ${j.disk} (${kb(j.bytes)}), ejected — push the handle`
+      : `${what} → ${j.disk} (${kb(j.bytes)}) but it did NOT eject, so the device has not reloaded — eject ${j.disk} from the tray, or unplug and replug`);
+  } catch (e) {
+    say("push failed: " + e.message);
+  }
+  $("#plamps").classList.remove("busy");
+  pollDisk();
+}
+
+/* every modulator pointed at row+param — more than one may stack on the same
+   parameter, and TE's own example preset does exactly that (shake + lfo on echo) */
+function modsOn(p, row, param) {
+  return ["handle", "shake", "lfo"].filter(k =>
+    p[k].on && p[k].row === row && p[k].param === param && !(k === "handle" && p[k].target === "lfo"));
+}
+
+/* =========================================================================
+   RENDER — header
+   ========================================================================= */
+function renderHead() {
+  if (document.activeElement !== $("#packName")) $("#packName").value = state.name;
+  if (document.activeElement !== $("#presetName")) $("#presetName").value = P().name;
+
+  const lamps = $("#plamps"); lamps.innerHTML = "";
+
+  state.presets.forEach((p, i) => {
+    const has = p.enabled && p.list.length;
+    const b = el("button", "plamp" + (has ? " has" : "") + (i === state.cur ? " cur" : ""));
+    b.title = `pos ${i}` + (p.name ? ` · ${p.name}` : has ? "" : " · empty")
+            + (i === state.cur ? " — editing" : " — click to edit");
+    b.onclick = () => { state.cur = i; renderAll(); };
+    lamps.appendChild(b);
+  });
+
+  queueSave();
+
+  const sel = $("#presetPick"); sel.innerHTML = "";
+  state.presets.forEach((p, i) => {
+    const label = "pos " + i + (p.name ? " · " + p.name : p.list.length ? " · " + p.list.length + " fx" : " · empty");
+    const o = el("option", null, label); o.value = String(i);
+    if (i === state.cur) o.selected = true; sel.appendChild(o);
+  });
+
+}
+
+/* =========================================================================
+   RENDER — the rack
+   ========================================================================= */
+function renderRack() {
+  const p = P(), host = $("#rack"); host.innerHTML = "";
+
+  p.list.forEach((fx, i) => {
+    const unit = el("div", "unit"), inner = el("div", "unit-in");
+    const row = el("div", "unit-top");
+    row.appendChild(el("i", "slotno", String(i)));
+
+    const fxSel = el("select", "unit-fx");
+    Object.keys(EFFECTS).forEach(nm => {
+      const o = el("option", null, nm); o.value = nm; if (nm === fx.effect) o.selected = true; fxSel.appendChild(o);
+    });
+    fxSel.onchange = () => {
+      fx.effect = fxSel.value; fx.params = {};
+      ["handle","shake","lfo"].forEach(k => { if (p[k].row === i) { p[k].on = false; p[k].param = ""; } });
+      if (p.trigger.on && p.trigger.row === i && fx.effect !== "SAMPLE") p.trigger.on = false;
+      renderAll();
+    };
+    row.appendChild(fxSel);
+
+    const bus = el("button", "bus" + (fx.bus ? " on" + (fx.bus === 2 ? " b2" : "") : ""), fx.bus ? "bus " + fx.bus : "series");
+    bus.title = "serial by default; BUS 1 and 2 run as parallel paths";
+    bus.onclick = () => { fx.bus = fx.bus === 1 ? 2 : fx.bus === 2 ? null : 1; renderAll(); };
+    row.appendChild(bus);
+
+    /* ---- parameters as vertical faders, channel-strip style ---- */
+    const prms = el("div", "prms");
+    const spec = EFFECTS[fx.effect].params;
+    const has = n => Object.prototype.hasOwnProperty.call(fx.params, n);
+
+    const drawFader = (host, name) => {
+      const [min, max, def] = spec[name];
+      const owners = modsOn(p, i, name);
+      const isSet = has(name);
+      const v = isSet ? fx.params[name] : def;
+      const pctOf = x => ((x - min) / (max - min)) * 100;
+
+      const f = el("div", "fader " + (isSet ? "on" : "off") + (owners.length ? " is-mod" : ""));
+
+      const val = el("input", "fval num"); val.type = "text"; val.value = round(v);
+      f.appendChild(val);
+
+      const track = el("div", "ftrack");
+      const fill = el("i", "ffill"); fill.style.height = pctOf(v) + "%";
+      const rng = el("input"); rng.type = "range";
+      rng.min = min; rng.max = max; rng.step = step(min, max); rng.value = v;
+      rng.title = name + "  [" + min + ", " + max + "]";
+      track.append(fill, rng);
+      f.appendChild(track);
+
+      const nm = el("button", "fname", shortName(name));
+      f.appendChild(nm);
+
+      /* Touching an unset fader sets it — but NEVER re-render here: this runs
+         on every drag frame, and rebuilding the DOM mid-drag drops the grab. */
+      const commit = x => {
+        x = clamp(Number(x), min, max);
+        if (Number.isNaN(x)) return;
+        const wasSet = has(name);
+        fx.params[name] = x;
+        rng.value = x; val.value = round(x);
+        fill.style.height = pctOf(x) + "%";
+        if (!wasSet) { f.classList.remove("off"); f.classList.add("on"); }
+        pushAudio(); renderOut(name + ":" + round(x));
+      };
+      rng.oninput = () => commit(rng.value);
+      val.onchange = () => commit(val.value);
+
+      nm.title = isSet ? name + " · click to unset, so the device uses its own default"
+                       : name + " · not written to the file — move it, or click, to set it";
+      nm.onclick = () => {
+        if (has(name)) { delete fx.params[name]; owners.forEach(k => { p[k].on = false; }); }
+        else fx.params[name] = def;
+        renderAll();
+      };
+
+      const mods = el("div", "fmods");
+      owners.forEach(k => {
+        const c = el("button", "fchip " + MODKEY[k], k[0]);
+        c.title = k + " · depth " + round(p[k].depth) + " — click to edit";
+        c.onclick = e => modEditor(e.currentTarget, k);
+        mods.appendChild(c);
+      });
+      if (owners.length < 3) {
+        const add = el("button", "fchip add", "+");
+        add.title = "wire a control into " + name;
+        add.onclick = e => modMenu(e.currentTarget, i, name);
+        mods.appendChild(add);
+      }
+      f.appendChild(mods);
+      host.appendChild(f);
+    };
+
+    groupsFor(fx.effect).forEach(([label, names]) => {
+      const grp = el("div", "grp");
+      grp.appendChild(el("span", "gl", label));
+      const body = el("div", "gp");
+      names.forEach(n => drawFader(body, n));
+      grp.appendChild(body);
+      prms.appendChild(grp);
+    });
+
+    /* ---- row tail ---- */
+    const end = el("div", "unit-end");
+    if (fx.effect === "SAMPLE") {
+      const t = el("button", "chip" + (p.trigger.on && p.trigger.row === i ? " t" : ""), "trig");
+      t.title = "the white button fires this row";
+      t.onclick = () => {
+        if (p.trigger.on && p.trigger.row === i) p.trigger.on = false;
+        else { p.trigger.on = true; p.trigger.row = i; }
+        renderAll();
+      };
+      end.appendChild(t);
+    }
+    const up = el("button", "ib", "↑"); up.disabled = i === 0; up.onclick = () => moveRow(i, -1);
+    const dn = el("button", "ib", "↓"); dn.disabled = i === p.list.length - 1; dn.onclick = () => moveRow(i, 1);
+    const rm = el("button", "ib kill", "✕"); rm.onclick = () => removeRow(i);
+    end.append(up, dn, rm);
+    row.appendChild(end);
+
+    inner.append(row, prms);
+    unit.appendChild(inner);
+    host.appendChild(unit);
+  });
+
+  /* the remaining bays — there is no fifth, so nothing has to say so */
+  for (let i = p.list.length; i < MAX_ROWS; i++) {
+    const bay = el("div", "bay");
+    const b = el("button", null, "add effect");
+    b.onclick = e => addMenu(e.currentTarget);
+    bay.appendChild(b);
+    host.appendChild(bay);
+  }
+}
+
+/* choosing the effect IS adding it — no dropdown to set, then a button to press */
+function addMenu(anchor) {
+  const pop = popShell(anchor, "menu");
+  pop.style.maxHeight = "60vh"; pop.style.overflowY = "auto";
+  const p = P();
+  Object.keys(EFFECTS).forEach(nm => {
+    const b = el("button", null, nm.toLowerCase());
+    const spent = ONCE_PER_CHAIN.includes(nm) && p.list.some(f => f.effect === nm);
+    if (spent) {
+      b.disabled = true; b.style.opacity = ".3"; b.title = nm + " may only be used once per chain";
+      const t = el("span", null, "used"); t.style.cssText = "margin-left:auto;font-size:9px;color:var(--dim)";
+      b.appendChild(t);
+    } else {
+      b.onclick = () => {
+        p.list.push({ effect: nm, bus: null, params: {} });
+        p.enabled = true; closePop(); renderAll();
+      };
+    }
+    pop.appendChild(b);
+  });
+}
+
+function moveRow(i, d) {
+  const p = P(), j = i + d;
+  if (j < 0 || j >= p.list.length) return;
+  [p.list[i], p.list[j]] = [p.list[j], p.list[i]];
+  ["handle","shake","lfo","trigger"].forEach(k => {
+    if (p[k].row === i) p[k].row = j; else if (p[k].row === j) p[k].row = i;
+  });
+  renderAll(); rebuildAudio();
+}
+function removeRow(i) {
+  const p = P();
+  p.list.splice(i, 1);
+  ["handle","shake","lfo","trigger"].forEach(k => {
+    if (p[k].row === i) { p[k].on = false; p[k].row = 0; p[k].param = ""; }
+    else if (p[k].row > i) p[k].row--;
+  });
+  if (!p.list.length) p.enabled = false;
+  renderAll(); rebuildAudio();
+}
+
+/* =========================================================================
+   POPOVERS
+   ========================================================================= */
+function closePop() { $("#layer").innerHTML = ""; }
+function placePop(pop, anchor) {
+  const r = anchor.getBoundingClientRect();
+  document.body.appendChild(pop);
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + "px";
+  const above = r.top - h - 6;
+  pop.style.top = (above > 8 ? above : Math.min(window.innerHeight - h - 8, r.bottom + 6)) + "px";
+  $("#layer").appendChild(pop);
+}
+function popShell(anchor, cls) {
+  closePop();
+  const scrim = el("div", "scrim"); scrim.onclick = closePop;
+  $("#layer").appendChild(scrim);
+  const pop = el("div", "pop " + (cls || ""));
+  placePop(pop, anchor);
+  return pop;
+}
+
+/* pick which modulator drives this param — wired FROM the parameter,
+   so a row number never has to be typed or remembered */
+function modMenu(anchor, row, param) {
+  const p = P(), pop = popShell(anchor, "menu");
+  const opts = [
+    ["handle", "handle", "var(--orange)", "position of the handle"],
+    ["shake", "shake", "#58b6ff", "while the unit is shaken"],
+    ["lfo", "lfo", "#c58bff", "free-running cycle"]
+  ];
+  opts.forEach(([k, label, color, hint]) => {
+    const b = el("button");
+    const sw = el("i", "sw"); sw.style.background = color;
+    b.append(sw, el("span", null, label));
+    const taken = p[k].on;
+    if (taken) {
+      const fx = p.list[p[k].row];
+      b.appendChild(el("span", null, "· in use"));
+      b.lastChild.style.cssText = "margin-left:auto;color:var(--dim);font-size:9px";
+      b.title = "currently on row " + p[k].row + " " + (fx ? fx.effect : "") + " · " + p[k].param + " — this will move it";
+    } else b.title = hint;
+    b.onclick = () => {
+      p[k].on = true; p[k].row = row; p[k].param = param;
+      if (k === "handle") p[k].target = "";
+      closePop(); renderAll(); rebuildAudio();
+    };
+    pop.appendChild(b);
+  });
+  return pop;
+}
+
+/* edit an existing modulator: depth, plus the LFO's own five settings */
+function modEditor(anchor, k) {
+  const p = P(), m = p[k], pop = popShell(anchor);
+  const head = el("div", "pop-h");
+  head.appendChild(el("span", "tiny", k));
+  const sp = el("span"); sp.style.flex = "1"; head.appendChild(sp);
+  const off = el("button", "chip", "remove");
+  off.onclick = () => { m.on = false; closePop(); renderAll(); rebuildAudio(); };
+  head.appendChild(off);
+  pop.appendChild(head);
+
+  const body = el("div", "pop-b");
+  const slider = (label, obj, key, min, max, st, hint) => {
+    const r = el("div", "pop-row");
+    const lab = el("span", "tiny", label); if (hint) lab.title = hint;
+    const rng = el("input"); rng.type = "range"; rng.min = min; rng.max = max; rng.step = st; rng.value = obj[key];
+    const v = el("input", "pv num"); v.type = "text"; v.value = round(obj[key]);
+    const set = x => { obj[key] = clamp(Number(x) || 0, min, max); rng.value = obj[key]; v.value = round(obj[key]); renderOut(); };
+    rng.oninput = () => set(rng.value);
+    v.onchange = () => set(v.value);
+    r.append(lab, rng, v);
+    return r;
+  };
+  body.appendChild(slider("depth", m, "depth", -1, 1, 0.01, "negative inverts the direction"));
+
+  if (k === "lfo") {
+    const r = el("div", "pop-row");
+    r.appendChild(el("span", "tiny", "shape"));
+    const s = el("select", "fld"); s.style.flex = "1";
+    LFO_SHAPES.forEach(sh => { const o = el("option", null, sh); o.value = sh; if (sh === m.shape) o.selected = true; s.appendChild(o); });
+    s.onchange = () => { m.shape = s.value; renderOut(); };
+    r.appendChild(s); body.appendChild(r);
+    body.appendChild(slider("speed", m, "speed", 0, 20, 0.1));
+    body.appendChild(slider("phase", m, "phase", 0, 1, 0.01));
+  }
+  if (k === "handle") {
+    const r = el("div", "pop-row");
+    const b = el("button", "chip" + (p.handle.target === "lfo" ? " h" : ""), "drive the lfo instead");
+    b.style.cssText = "height:22px;line-height:22px";
+    b.title = "handle changes the LFO speed rather than this parameter";
+    b.onclick = () => {
+      p.handle.target = p.handle.target === "lfo" ? "" : "lfo";
+      if (p.handle.target === "lfo") p.handle.param = "speed";
+      closePop(); renderAll(); rebuildAudio();
+    };
+    r.appendChild(b); body.appendChild(r);
+  }
+  pop.appendChild(body);
+}
+
+/* right-hand sheets: samples, checks, json */
+function sheet(title, fill) {
+  closePop();
+  const scrim = el("div", "scrim"); scrim.onclick = closePop;
+  const sh = el("div", "sheet");
+  const h = el("div", "sheet-h");
+  h.appendChild(el("span", "disp", title));
+  const sp = el("span"); sp.style.flex = "1"; h.appendChild(sp);
+  const x = el("button", "pbtn", "close"); x.onclick = closePop; h.appendChild(x);
+  const b = el("div", "sheet-b");
+  sh.append(h, b);
+  $("#layer").append(scrim, sh);
+  fill(b, h);
+  return sh;
+}
+
+const kb = b => b > 1048576 ? (b / 1048576).toFixed(2) + " MB" : Math.round(b / 1024) + " kB";
+
+function checksSheet() {
+  sheet("checks", b => {
+    const out = collectIssues();
+    if (!out.length) {
+      const d = el("div", "note ok");
+      d.append(el("span", "ic", "ok"), el("span", null, "no problems found. download it, drop it on the fx-mic disk and eject."));
+      b.appendChild(d); return;
+    }
+    out.forEach(o => {
+      const d = el("div", "note " + o.lvl);
+      d.appendChild(el("span", "ic", o.lvl === "err" ? "error" : "note"));
+      const s = el("span"); s.innerHTML = o.msg; d.appendChild(s);
+      b.appendChild(d);
+    });
+  });
+}
+
+
+function moreMenu(anchor) {
+  const pop = popShell(anchor, "menu");
+  const item = (label, fn) => { const b = el("button", null, label); b.onclick = () => { closePop(); fn(); }; pop.appendChild(b); };
+  /* `push` is what this file is FOR, so it is the only button left in the
+     header beside the checks lamp. Download is the fallback for when the
+     device is not to hand, and it belongs next to import — they are the two
+     ends of the same job. `copy` went entirely: the rail is already
+     `user-select: text`, so selecting it and pressing ctrl+c does the same
+     thing without a button that has to say "copied" and then change back. */
+  item("download config.json", download);
+  item("import config.json", () => $("#fileImport").click());
+  pop.appendChild(el("div", "sep"));
+  item("load starter pack", () => importConfig(JSON.stringify(STARTER)));
+  pop.appendChild(el("div", "sep"));
+  item("clear this preset", () => { const p = P(); Object.assign(p, blankPreset()); renderAll(); });
+  item("clear everything", () => {
+    state.presets = [blankPreset(), blankPreset(), blankPreset(), blankPreset()];
+    state.samples.forEach((s, i) => Object.assign(s, { on:false, file:(i+1)+".wav", playmode:"oneshot", duck:null, bytes:0, fit:"orig" }));
+    state.useSamples = false; state.cur = 0; state.name = "MY PACK"; renderAll();
+  });
+}
+
+/* =========================================================================
+   SERIALIZE
+   ========================================================================= */
+const INT_KEYS = new Set(["pos", "row", "BUS"]);
+function numLit(v, isFloat) {
+  const n = round(v);
+  if (!isFloat) return String(n);
+  return Number.isInteger(n) ? n.toFixed(1) : String(n);
+}
+function build() {
+  const cfg = { name: state.name || "UNTITLED" };
+  if (state.useSamples) {
+    const arr = [];
+    state.samples.forEach((s, i) => {
+      if (!s.on || !s.file) return;
+      const o = { pos: i, file: s.file, playmode: s.playmode };
+      if (s.duck != null) o.duck = s.duck;
+      arr.push(o);
+    });
+    if (arr.length) cfg.samples = arr;
+  }
+  const presets = [];
+  state.presets.forEach((p, i) => {
+    if (!p.enabled || !p.list.length) return;
+    const o = { pos: i };
+    if (p.name) o.name = p.name;
+    if (p.comment) o.comment = p.comment;
+    o.list = p.list.map(fx => {
+      const e = { effect: fx.effect };
+      Object.keys(EFFECTS[fx.effect].params).forEach(n => {
+        if (Object.prototype.hasOwnProperty.call(fx.params, n)) e[n] = fx.params[n];
+      });
+      if (fx.bus) e.BUS = fx.bus;
+      return e;
+    });
+    if (p.handle.on) {
+      const h = { row: p.handle.row, param: p.handle.param, depth: p.handle.depth };
+      if (p.handle.target === "lfo") h.target = "lfo";
+      o.handle = h;
+    }
+    if (p.shake.on) o.shake = { row: p.shake.row, param: p.shake.param, depth: p.shake.depth };
+    /* exactly TE's documented lfo, in TE's own field order */
+    if (p.lfo.on) o.lfo = { row: p.lfo.row, param: p.lfo.param, depth: p.lfo.depth,
+      shape: p.lfo.shape, speed: p.lfo.speed, phase: p.lfo.phase };
+    if (p.trigger.on) o.trigger = { row: p.trigger.row };
+    presets.push(o);
+  });
+  if (presets.length) cfg.presets = presets;
+  return cfg;
+}
+function fmt(v, ind, key) {
+  const pad = "  ".repeat(ind), pad2 = "  ".repeat(ind + 1);
+  if (Array.isArray(v)) {
+    if (!v.length) return "[]";
+    return "[\n" + v.map(x => pad2 + fmt(x, ind + 1)).join(",\n") + "\n" + pad + "]";
+  }
+  if (v && typeof v === "object") {
+    const keys = Object.keys(v);
+    const leaf = keys.every(k => typeof v[k] !== "object" || v[k] === null);
+    const parts = keys.map(k => JSON.stringify(k) + ": " + fmt(v[k], ind + 1, k));
+    if (leaf) return "{ " + parts.join(", ") + " }";
+    return "{\n" + parts.map(s => pad2 + s).join(",\n") + "\n" + pad + "}";
+  }
+  if (typeof v === "number") return numLit(v, !INT_KEYS.has(key));
+  return JSON.stringify(v);
+}
+/* The key pass swallows the colon into a <span>, so every value pattern has to
+   match the POST-key form — matching a bare ": value" silently finds nothing. */
+const COLON = '<span class="p">:</span> ';
+const rx = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function highlight(s, lit) {
+  let h = s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]))
+    .replace(/"([^"]+)":/g, '<span class="k">"$1"</span><span class="p">:</span>');
+
+  h = h.replace(/(<span class="p">:<\/span> )("(?:[^"\\]|\\.)*")/g, (m, lead, str) => {
+    const inner = str.slice(1, -1);
+    return lead + '<span class="' + (/^[A-Z]{3,9}$/.test(inner) ? "fx" : "s") + '">' + str + "</span>";
+  });
+  h = h.replace(/(<span class="p">:<\/span> )(-?\d+(?:\.\d+)?)/g, '$1<span class="n">$2</span>');
+
+  if (lit) {
+    const i = lit.lastIndexOf(":");
+    const key = lit.slice(0, i), val = numLit(Number(lit.slice(i + 1)), true);
+    /* the same param can appear in several presets, so search only from the
+       active preset's "pos" onward */
+    const anchor = h.indexOf('<span class="k">"pos"</span>' + COLON + '<span class="n">' + state.cur + "</span>");
+    const from = anchor < 0 ? 0 : anchor;
+    const re = new RegExp('(<span class="k">"' + rx(key) + '"</span>' + rx(COLON)
+      + '<span class="n">)(' + rx(val) + ')(</span>)');
+    const tail = h.slice(from).replace(re, '$1<span class="lit">$2</span>$3');
+    h = h.slice(0, from) + tail;
+  }
+  return h;
+}
+
+/* =========================================================================
+   VALIDATION
+   ========================================================================= */
+function collectIssues() {
+  const out = [];
+  const add = (lvl, msg) => out.push({ lvl, msg });
+  state.presets.forEach((p, pi) => {
+    if (!p.enabled) return;
+    const at = "pos " + pi + ": ";
+    if (!p.list.length) { add("warn", at + "enabled but empty — it will be skipped."); return; }
+    ONCE_PER_CHAIN.forEach(f => {
+      const n = p.list.filter(x => x.effect === f).length;
+      if (n > 1) add("err", at + "<code>" + f + "</code> appears " + n + " times. once per chain only.");
+    });
+    ["handle","shake","lfo"].forEach(k => {
+      const m = p[k]; if (!m.on) return;
+      const fx = p.list[m.row];
+      if (!fx) { add("err", at + k + " targets row " + m.row + ", which does not exist."); return; }
+      if (k === "handle" && m.target === "lfo") { if (!p.lfo.on) add("err", at + "handle drives the LFO, but no LFO is set."); return; }
+      if (!m.param) { add("err", at + k + " has no parameter."); return; }
+      if (!EFFECTS[fx.effect].params[m.param])
+        add("err", at + k + " targets <code>" + m.param + "</code> on row " + m.row + ", but <code>" + fx.effect + "</code> has no such parameter.");
+      if (m.depth === 0) add("warn", at + k + " has depth 0 — it will do nothing.");
+    });
+    if (p.trigger.on) {
+      const fx = p.list[p.trigger.row];
+      if (!fx) add("err", at + "trigger targets row " + p.trigger.row + ", which does not exist.");
+      else if (fx.effect !== "SAMPLE") add("warn", at + "trigger points at <code>" + fx.effect + "</code>. both documented examples point it at the SAMPLE row.");
+    }
+    if (p.list.some(f => f.effect === "SAMPLE") && !p.trigger.on)
+      add("warn", at + "has a SAMPLE row but no trigger — the white button may fire nothing.");
+    p.list.forEach((fx, ri) => {
+      if (fx.effect === "EQUALIZER")
+        add("warn", at + "row " + ri + ": the web guide spells this <code>EQUALISER</code>, the on-device readme <code>EQUALIZER</code>. if it is ignored, try the other.");
+      if ((fx.effect === "LOWPASS" || fx.effect === "HIGHPASS") && "Q" in fx.params)
+        add("warn", at + "row " + ri + ": <code>Q</code> on " + fx.effect + " needs firmware 1.0.9+.");
+      Object.keys(fx.params).forEach(n => {
+        /* A param the effect does not own used to destructure `undefined` here
+           and throw, which killed collectIssues — and renderOut calls it, so
+           the ENTIRE json rail stopped rendering over one stray key. Changing
+           an effect clears params and the importer filters to known ones, so
+           this should be unreachable; it is guarded because the blast radius
+           was the whole panel rather than the one bad row. */
+        const spec = EFFECTS[fx.effect].params[n];
+        if (!spec) {
+          add("err", at + "row " + ri + ": <code>" + n + "</code> is not a parameter of " + fx.effect + ".");
+          return;
+        }
+      });
+
+      /* ---- "configured to do nothing" ----
+         A bypassed effect and a broken effect look identical from outside, and
+         that — not firmware — is the failure that actually keeps happening.
+         Five separate rounds of "the fx aren't working" in one session were
+         all a fader sitting at a value that silences the effect. These say
+         which fader, at the moment you are looking for it. */
+      const v = n => Object.prototype.hasOwnProperty.call(fx.params, n)
+        ? fx.params[n] : EFFECTS[fx.effect].params[n]?.[2];
+      const has = n => EFFECTS[fx.effect].params[n] !== undefined;
+      const row = at + "row " + ri + ": " + fx.effect + " ";
+
+      // both output paths shut: in series this silences everything after it too
+      if (has("dry-level") && has("wet-level") && v("dry-level") === 0 && v("wet-level") === 0)
+        add("warn", row + "has <code>dry-level</code> and <code>wet-level</code> both at 0 — it outputs nothing, and in series that silences every row below it.");
+      else if (fx.effect === "REVERB" && v("wet-level") === 0)
+        add("warn", row + "has <code>wet-level</code> at 0 — no reverb is audible, only the dry signal passing through.");
+
+      // highpass-cutoff maps to 20 * 1000^v, so 0.8 is already ~5kHz
+      if (has("highpass-cutoff") && v("highpass-cutoff") >= 0.8)
+        add("warn", row + "<code>highpass-cutoff</code> is " + round(v("highpass-cutoff")) + " (~" + Math.round(mapCut(v("highpass-cutoff"))) + "Hz) — that strips nearly everything audible"
+          + (fx.effect === "REVERB" ? ", including the reverb tail." : "."));
+
+      /* the mirror of the highpass rule, and just as deadly: lowpass-cutoff
+         clamps to a 60Hz floor, so anything near 0 leaves only sub-bass and
+         silences whatever the rows ABOVE it produced — a reverb tail created
+         at row 0 dies in a lowpass at row 1. */
+      if (has("lowpass-cutoff") && v("lowpass-cutoff") <= 0.2)
+        add("warn", row + "<code>lowpass-cutoff</code> is " + round(v("lowpass-cutoff")) + " (~" + Math.round(clamp(mapCut(v("lowpass-cutoff")), 60, 20000)) + "Hz) — that leaves only sub-bass, and kills anything the rows above it produced.");
+
+      if (fx.effect === "DIST" && v("mix") === 0)
+        add("warn", row + "<code>mix</code> is 0 — mix is a wet/dry blend, so the signal bypasses the distortion entirely however high <code>amount</code> is.");
+      if (fx.effect === "DIST" && v("amount") === 0)
+        add("warn", row + "<code>amount</code> is 0 — no drive, so there is nothing to hear.");
+      if (fx.effect === "EQUALIZER" && Math.abs(v("gain")) < 0.08)
+        add("warn", row + "<code>gain</code> is " + round(v("gain")) + " (" + round(v("gain") * 24) + "dB) — too small to hear. It runs ±1 for ±24dB.");
+
+      Object.keys(fx.params).forEach(n => {
+        const spec = EFFECTS[fx.effect].params[n];
+        if (!spec) return;
+        const [min, max] = spec, v = fx.params[n];
+        if (v < min || v > max) add("err", at + "row " + ri + " <code>" + n + "</code> = " + v + " is outside [" + min + ", " + max + "].");
+      });
+    });
+  });
+  if (state.useSamples) {
+    const used = state.samples.filter(s => s.on);
+    const total = used.reduce((a, s) => a + s.bytes, 0);
+    if (total > SIZE_BUDGET) add("err", "samples total " + kb(total) + ", over the ~1 MB budget.");
+    used.forEach((s, i) => {
+      if (!s.file) add("err", "sample slot " + i + " is on but has no file name.");
+      else if (!/\.wav$/i.test(s.file)) add("err", "<code>" + s.file + "</code> is not a .wav.");
+    });
+    if (used.some(s => s.duck != null)) add("warn", "<code>duck</code> needs firmware 1.0.9+.");
+  }
+  if (!state.presets.some(p => p.enabled && p.list.length)) add("warn", "no presets yet — the file has nothing in it.");
+  out.sort((a, b) => (a.lvl === "err" ? 0 : 1) - (b.lvl === "err" ? 0 : 1));
+  return out;
+}
+/* `lit` is "param:value" — the one you just moved, so the rail can flash it */
+let railPending = 0, railLit = "";
+/* ---------------- autosave ----------------
+   The patch lived in memory only, so ANY reload silently threw it away — and
+   that is not a theoretical loss: a session spent reloading the page to test
+   CSS wiped a chain between two pushes, the second push wrote the starter pack
+   back over pos 0, and the device dutifully played it. An hour went into
+   hunting a preset-numbering bug that never existed.
+
+   Saved as the serialised config, not the live state object, so a restore goes
+   through the same importer every other load does and cannot resurrect a stale
+   in-memory shape. Debounced because renderOut runs on every drag frame. */
+const SAVE_KEY = "fxmic.v2.patch";
+let savedSrc = null, saveTimer = 0;
+
+function saveNow() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      config: fmt(build(), 0),
+      cur: state.cur,
+      src: $("#srcSel").value,
+      at: Date.now()
+    }));
+  } catch (e) {}          /* private window, or storage full — never fatal */
+}
+const queueSave = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 400); };
+
+function restoreSaved() {
+  let o;
+  try { o = JSON.parse(localStorage.getItem(SAVE_KEY) || "null"); } catch { return false; }
+  if (!o || typeof o.config !== "string") return false;
+  try { importConfig(o.config); } catch { return false; }
+  if (typeof o.cur === "number" && o.cur >= 0 && o.cur < MAX_PRESETS) state.cur = o.cur;
+  if (typeof o.src === "string") savedSrc = o.src;
+  renderAll();
+  return true;
+}
+
+function renderOut(lit) {
+  const out = collectIssues();
+  const errs = out.filter(o => o.lvl === "err").length, warns = out.length - errs;
+  $("#chkLamp").className = "lamp " + (errs ? "err" : warns ? "warn" : "ok");
+  $("#chkTxt").textContent = errs ? errs + " error" + (errs > 1 ? "s" : "")
+    : warns ? warns + " note" + (warns > 1 ? "s" : "") : "clear";
+
+  if (lit) railLit = lit;
+  if (railPending || $("#rackWrap").classList.contains("solo")) return;
+  railPending = requestAnimationFrame(() => {       // coalesce: a drag fires per frame
+    railPending = 0;
+    const lv = railLit; railLit = "";
+    $("#railCode").innerHTML = highlight(fmt(build(), 0), lv);
+  });
+}
+
+/* =========================================================================
+   AUDIO ENGINE — an approximation for auditioning, not an emulator.
+   ========================================================================= */
+let ctx = null, running = false;
+let srcNode = null, srcGain = null, chainIn = null, chainOut = null, master = null, meterTap = null;
+let analyserL = null, analyserR = null;
+
+/* ---- stereo ladder meter ---- */
+const SEGS = 7, HOT = 0.72, CLIP = 0.88;       // 5 green, 1 hot, 1 clip
+const meters = {};
+function buildMeters() {
+  ["L", "R"].forEach(ch => {
+    const host = $("#meter" + ch);
+    host.innerHTML = "";
+    const segs = [];
+    for (let i = 0; i < SEGS; i++) {
+      const s = el("i", "seg");
+      const f = i / (SEGS - 1);
+      if (f >= CLIP) s.dataset.z = "clip"; else if (f >= HOT) s.dataset.z = "hot";
+      /* 145deg (green) down to 0 (red), eased so the bottom of the ladder stays
+         green and the shift happens where you need the warning */
+      s.style.setProperty("--sc", `hsl(${(145 * (1 - Math.pow(f, 2.2))).toFixed(0)} 72% 53%)`);
+      host.appendChild(s); segs.push(s);
+    }
+    meters[ch] = { segs, peak: 0, hold: 0, holdT: 0 };
+  });
+}
+const peakOf = a => {
+  const buf = new Uint8Array(a.fftSize);
+  a.getByteTimeDomainData(buf);
+  let p = 0;
+  for (let i = 0; i < buf.length; i++) p = Math.max(p, Math.abs(buf[i] - 128) / 128);
+  return p;
+};
+/* amplitude is useless raw on a ladder — map it to dB over a -48..0 window */
+const toDb = p => clamp((20 * Math.log10(p + 1e-6) + 48) / 48, 0, 1);
+
+function drawMeters(dt) {
+  [["L", analyserL], ["R", analyserR]].forEach(([ch, an]) => {
+    const m = meters[ch]; if (!m) return;
+    const lvl = an ? toDb(peakOf(an)) : 0;
+    m.peak += (lvl - m.peak) * (lvl > m.peak ? 0.6 : 0.12);   // fast attack, slow release
+    if (m.peak >= m.hold) { m.hold = m.peak; m.holdT = 0.9; }
+    else { m.holdT -= dt; if (m.holdT <= 0) m.hold = Math.max(m.peak, m.hold - dt * 0.6); }
+    const lit = Math.round(m.peak * SEGS);
+    const holdIdx = m.hold > 0.01 ? Math.min(SEGS - 1, Math.round(m.hold * SEGS) - 1) : -1;
+    m.segs.forEach((s, i) => {
+      const on = i < lit, hold = i === holdIdx && !on;
+      s.className = "seg" + (on ? " on " + (s.dataset.z || "") : "") + (hold ? " hold" : "");
+    });
+  });
+}
+function clearMeters() {
+  Object.values(meters).forEach(m => {
+    m.peak = m.hold = m.holdT = 0;
+    m.segs.forEach(s => { s.className = "seg"; });
+  });
+}
+let built = [], sampleBufs = [null,null,null,null], fileBuf = null, micStream = null;
+/* sampleSrc is the ORIGINAL decode, kept at full quality so quality can be
+   dialled up and down without going back to the file. sampleBufs is what the
+   preview plays and sampleData is what gets pushed — both are the ENCODED
+   result, so auditioning a slot is auditioning the bytes that land on the
+   device rather than the file you started from. */
+let sampleSrc = [null,null,null,null], sampleData = [null,null,null,null];
+let lfoPhase = 0, shakeEnv = 0, lastT = 0, curSampleSlot = 0;
+
+const mapCut = v => 20 * Math.pow(1000, clamp(v, 0, 1));
+const mapQ = v => 0.3 + clamp(v, 0, 1) * 17;
+
+function makeDistCurve(amount) {
+  const n = 2048, c = new Float32Array(n), k = 1 + amount * 3;
+  for (let i = 0; i < n; i++) { const x = i * 2 / n - 1; c[i] = Math.tanh(k * x); }
+  return c;
+}
+function makeIR(seconds, springMix) {
+  const sr = ctx.sampleRate, len = Math.max(1, Math.floor(sr * seconds));
+  const buf = ctx.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) {
+      const t = i / len, env = Math.pow(1 - t, 2.6);
+      let v = (Math.random() * 2 - 1) * env;
+      if (springMix > 0) {
+        const f = 1600 - 1200 * t;
+        v = v * (1 - springMix) + Math.sin(2 * Math.PI * f * (i / sr) * (1 + 3 * t)) * env * springMix * 0.75;
+      }
+      d[i] = v;
+    }
+  }
+  return buf;
+}
+function fxBalance(p) {
+  const pan = ctx.createStereoPanner();
+  const set = (n, v) => { if (n === "balance") pan.pan.value = clamp(v * 2 - 1, -1, 1); };
+  set("balance", p.balance);
+  return { input: pan, output: pan, set };
+}
+function fxFilter(type, p) {
+  const b = ctx.createBiquadFilter(); b.type = type;
+  const set = (n, v) => {
+    if (n === "cutoff") b.frequency.value = clamp(mapCut(v), 20, ctx.sampleRate / 2 - 100);
+    if (n === "Q") b.Q.value = mapQ(v);
+  };
+  set("cutoff", p.cutoff); set("Q", p.Q);
+  return { input: b, output: b, set };
+}
+function fxEQ(p) {
+  const b = ctx.createBiquadFilter(); b.type = "peaking";
+  const set = (n, v) => {
+    if (n === "cutoff") b.frequency.value = clamp(mapCut(v), 20, ctx.sampleRate / 2 - 100);
+    if (n === "Q") b.Q.value = mapQ(v);
+    if (n === "gain") b.gain.value = clamp(v, -1, 1) * 24;
+  };
+  set("cutoff", p.cutoff); set("Q", p.Q); set("gain", p.gain);
+  return { input: b, output: b, set };
+}
+function fxDist(p) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const hp = ctx.createBiquadFilter(); hp.type = "highpass";
+  const lp = ctx.createBiquadFilter(); lp.type = "lowpass";
+  const ws = ctx.createWaveShaper(); ws.oversample = "2x";
+  const wet = ctx.createGain(), dry = ctx.createGain(), trim = ctx.createGain();
+  input.connect(hp); hp.connect(lp); lp.connect(ws); ws.connect(trim); trim.connect(wet); wet.connect(output);
+  input.connect(dry); dry.connect(output);
+  const set = (n, v) => {
+    if (n === "amount") { ws.curve = makeDistCurve(v); trim.gain.value = 1 / (1 + v * 0.12); }
+    if (n === "highpass-cutoff") hp.frequency.value = clamp(mapCut(v), 20, 18000);
+    if (n === "lowpass-cutoff") lp.frequency.value = clamp(mapCut(v), 60, ctx.sampleRate / 2 - 100);
+    if (n === "mix") { wet.gain.value = v; dry.gain.value = 1 - v; }
+  };
+  Object.keys(EFFECTS.DIST.params).forEach(n => set(n, p[n]));
+  return { input, output, set };
+}
+function fxDelay(p) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const d = ctx.createDelay(2.0), fb = ctx.createGain();
+  const hp = ctx.createBiquadFilter(); hp.type = "highpass";
+  const lp = ctx.createBiquadFilter(); lp.type = "lowpass";
+  const wet = ctx.createGain(), dry = ctx.createGain(), pan = ctx.createStereoPanner();
+  const xf = ctx.createGain(), xd = ctx.createDelay(2.0);
+  input.connect(d); d.connect(hp); hp.connect(lp); lp.connect(fb); fb.connect(d);
+  lp.connect(xf); xf.connect(xd); xd.connect(d);
+  lp.connect(wet); wet.connect(pan); pan.connect(output);
+  input.connect(dry); dry.connect(output);
+  const set = (n, v) => {
+    if (n === "time") { d.delayTime.value = clamp(v, 0.001, 1.1); xd.delayTime.value = clamp(v, 0.001, 1.1) * 0.5; }
+    if (n === "echo") fb.gain.value = clamp(v, 0, 0.92);
+    if (n === "cross-feed") xf.gain.value = clamp(v, 0, 0.6);
+    if (n === "highpass-cutoff") hp.frequency.value = clamp(mapCut(v), 20, 18000);
+    if (n === "lowpass-cutoff") lp.frequency.value = clamp(mapCut(v), 100, ctx.sampleRate / 2 - 100);
+    if (n === "wet-level") wet.gain.value = v;
+    if (n === "dry-level") dry.gain.value = v;
+    if (n === "balance") pan.pan.value = clamp(v * 2 - 1, -1, 1);
+  };
+  Object.keys(EFFECTS.DELAY.params).forEach(n => set(n, p[n]));
+  return { input, output, set };
+}
+function fxReverb(p) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const conv = ctx.createConvolver();
+  const hp = ctx.createBiquadFilter(); hp.type = "highpass";
+  const wet = ctx.createGain(), dry = ctx.createGain();
+  input.connect(hp); hp.connect(conv); conv.connect(wet); wet.connect(output);
+  input.connect(dry); dry.connect(output);
+  let t = p.time, sm = p["spring-mix"], pending = 0;
+  const regen = () => {
+    clearTimeout(pending);
+    pending = setTimeout(() => { try { conv.buffer = makeIR(0.15 + t * 3.8, sm); } catch (e) {} }, 40);
+  };
+  /* Only regenerate when the value actually CHANGED.
+     Assigning conv.buffer resets a ConvolverNode's internal state, which
+     destroys whatever tail is currently ringing — and pushAudio() sets every
+     parameter on every call, including on every frame of a fader drag. So
+     touching any fader anywhere wiped the reverb tail 40ms later, and the
+     reverb appeared to have no tail at all while you were adjusting it, which
+     is exactly when you are listening for one. */
+  const set = (n, v) => {
+    if (n === "time" && v !== t) { t = v; regen(); }
+    if (n === "spring-mix" && v !== sm) { sm = v; regen(); }
+    if (n === "highpass-cutoff") hp.frequency.value = clamp(mapCut(v), 20, 16000);
+    if (n === "wet-level") wet.gain.value = v;
+    if (n === "dry-level") dry.gain.value = v;
+  };
+  Object.keys(EFFECTS.REVERB.params).forEach(n => set(n, p[n]));
+  conv.buffer = makeIR(0.15 + t * 3.8, sm);
+  return { input, output, set };
+}
+function fxRing(p, ssb) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const mul = ctx.createGain(); mul.gain.value = 0;
+  const osc = ctx.createOscillator(); osc.type = "sine";
+  const wet = ctx.createGain(), dry = ctx.createGain();
+  osc.connect(mul.gain);
+  input.connect(mul); mul.connect(wet); wet.connect(output);
+  input.connect(dry); dry.connect(output);
+  osc.start();
+  const set = (n, v) => {
+    if (n === "frequency") osc.frequency.value = clamp(Math.abs(v), 0, 20000);
+    if (n === "mix") { wet.gain.value = v; dry.gain.value = 1 - v; }
+  };
+  set("frequency", p.frequency); set("mix", ssb ? 1 : p.mix);
+  return { input, output, set, _nodes: [osc] };
+}
+function fxHarmony(p) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const dry = ctx.createGain(); dry.gain.value = p["dry-level"];
+  input.connect(dry); dry.connect(output);
+  const W = 0.07, nodes = [], taps = [];
+  for (let i = 0; i < 2; i++) {
+    const d = ctx.createDelay(0.5);
+    const saw = ctx.createOscillator(); saw.type = "sawtooth";
+    const amp = ctx.createGain();
+    const off = ctx.createConstantSource(); off.offset.value = W / 2;
+    const tri = ctx.createOscillator(); tri.type = "triangle";
+    const triAmp = ctx.createGain(); triAmp.gain.value = 0.5;
+    const triOff = ctx.createConstantSource(); triOff.offset.value = 0.5;
+    const win = ctx.createGain(); win.gain.value = 0;
+    saw.connect(amp); amp.connect(d.delayTime); off.connect(d.delayTime);
+    tri.connect(triAmp); triAmp.connect(win.gain); triOff.connect(win.gain);
+    input.connect(d); d.connect(win); win.connect(output);
+    nodes.push(saw, off, tri, triOff);
+    taps.push({ saw, amp, tri, t0: ctx.currentTime + 0.02, i });
+  }
+  const set = (n, v) => {
+    if (n === "dry-level") dry.gain.value = v;
+    if (n === "pitch") {
+      const r = clamp(v, 0.5, 2), diff = Math.abs(1 - r);
+      const f = Math.max(0.5, diff / W);
+      taps.forEach(t => {
+        t.saw.frequency.value = f; t.tri.frequency.value = f;
+        t.amp.gain.value = (r > 1 ? -1 : 1) * W / 2;
+      });
+    }
+  };
+  set("pitch", p.pitch);
+  taps.forEach(t => {
+    const half = 1 / Math.max(0.001, t.saw.frequency.value) / 2;
+    t.saw.start(t.t0 + (t.i ? half : 0));
+    t.tri.start(t.t0 + (t.i ? half : 0));
+  });
+  nodes.forEach(n => { if (n.start && n.offset) n.start(); });
+  return { input, output, set, _nodes: nodes };
+}
+function fxSample(p) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const g = ctx.createGain(), pan = ctx.createStereoPanner();
+  input.connect(output); g.connect(pan); pan.connect(output);
+  let speed = p.speed, semis = p.pitch, voice = null;
+  const rate = () => clamp(speed * Math.pow(2, semis / 12), 0.0625, 16);
+  const set = (n, v) => {
+    if (n === "speed") { speed = v; if (voice) voice.playbackRate.value = rate(); }
+    if (n === "pitch") { semis = v; if (voice) voice.playbackRate.value = rate(); }
+    if (n === "level") g.gain.value = v;
+    if (n === "balance") pan.pan.value = clamp(v * 2 - 1, -1, 1);
+  };
+  set("level", p.level); set("balance", p.balance);
+  const play = (buf, loop) => {
+    if (voice) { try { voice.stop(); } catch (e) {} voice = null; }
+    if (!buf) return false;
+    const s = ctx.createBufferSource();
+    s.buffer = buf; s.loop = !!loop; s.playbackRate.value = rate();
+    s.connect(g); s.start(); voice = s;
+    s.onended = () => { if (voice === s) voice = null; };
+    return true;
+  };
+  return { input, output, set, play, stop: () => { if (voice) { try { voice.stop(); } catch (e) {} voice = null; } }, isPlaying: () => !!voice };
+}
+function makeFx(effect, params) {
+  const p = {};
+  Object.keys(EFFECTS[effect].params).forEach(n => {
+    p[n] = Object.prototype.hasOwnProperty.call(params, n) ? params[n] : EFFECTS[effect].params[n][2];
+  });
+  switch (effect) {
+    case "BALANCE": return fxBalance(p);
+    case "LOWPASS": return fxFilter("lowpass", p);
+    case "HIGHPASS": return fxFilter("highpass", p);
+    case "EQUALIZER": return fxEQ(p);
+    case "DIST": return fxDist(p);
+    case "DELAY": return fxDelay(p);
+    case "REVERB": return fxReverb(p);
+    case "RING": return fxRing(p, false);
+    case "SSB": return fxRing({ frequency: Math.abs(p.frequency), mix: 1 }, true);
+    case "HARMONY": return fxHarmony(p);
+    case "SAMPLE": return fxSample(p);
+  }
+  const g = ctx.createGain(); return { input: g, output: g, set: () => {} };
+}
+function teardownChain() {
+  built.forEach(b => {
+    (b._nodes || []).forEach(n => { try { n.stop && n.stop(); } catch (e) {} });
+    if (b.stop) b.stop();
+    try { b.output.disconnect(); } catch (e) {}
+    try { b.input.disconnect(); } catch (e) {}
+  });
+  built = [];
+  if (chainIn) { try { chainIn.disconnect(); } catch (e) {} }
+  if (chainOut) { try { chainOut.disconnect(); } catch (e) {} }
+}
+function rebuildAudio() {
+  if (!running || !ctx) return;
+  teardownChain();
+  chainIn = ctx.createGain(); chainOut = ctx.createGain();
+
+  const p = P(), buses = { main: [], 1: [], 2: [] };
+  p.list.forEach(fx => {
+    const inst = makeFx(fx.effect, fx.params);
+    inst.effect = fx.effect; built.push(inst);
+    buses[fx.bus === 1 ? 1 : fx.bus === 2 ? 2 : "main"].push(inst);
+  });
+  let paths = 0;
+  ["main", 1, 2].forEach(k => {
+    const list = buses[k];
+    if (k !== "main" && !list.length) return;
+    let node = chainIn;
+    list.forEach(inst => { node.connect(inst.input); node = inst.output; });
+    node.connect(chainOut); paths++;
+  });
+  chainOut.gain.value = 1 / Math.sqrt(paths);
+  if (srcGain) srcGain.connect(chainIn);
+  chainOut.connect(master);
+  if (meterTap) chainOut.connect(meterTap);
+  pushAudio();
+}
+function pushAudio() {
+  if (!running) return;
+  P().list.forEach((fx, i) => {
+    const inst = built[i]; if (!inst) return;
+    Object.keys(EFFECTS[fx.effect].params).forEach(n => {
+      inst.set(n, Object.prototype.hasOwnProperty.call(fx.params, n) ? fx.params[n] : EFFECTS[fx.effect].params[n][2]);
+    });
+  });
+}
+function makeSource(kind) {
+  if (srcNode) { try { srcNode.stop && srcNode.stop(); } catch (e) {} try { srcNode.disconnect(); } catch (e) {} srcNode = null; }
+  if (micStream && kind !== "mic") { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  /* ---- synthetic sources: NO LONGER IN THE DROPDOWN ----
+     The `synthetic` optgroup was removed 2026-11-07 — this is a microphone
+     box, the source is a microphone. These three are unreachable from the UI
+     now, and are kept rather than deleted for two reasons: the project has no
+     version control, and they are the only sound source that needs neither a
+     file nor a permission grant, which makes them the thing to reach for if
+     the chain itself ever has to be debugged in isolation. Re-add an option
+     with value "voice" / "noise" / "tone" to get one back. */
+  if (kind === "noise") {
+    const len = ctx.sampleRate * 2, b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99765 * b0 + w * 0.0990460; b1 = 0.96300 * b1 + w * 0.2965164; b2 = 0.57000 * b2 + w * 1.0526913;
+      d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.16;
+    }
+    const s = ctx.createBufferSource(); s.buffer = b; s.loop = true; s.start();
+    srcNode = s; s.connect(srcGain); return;
+  }
+  if (kind === "tone") {
+    const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = 174.6;
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1400; lp.Q.value = 6;
+    const l = ctx.createOscillator(); l.type = "sine"; l.frequency.value = 0.18;
+    const la = ctx.createGain(); la.gain.value = 900;
+    l.connect(la); la.connect(lp.frequency); l.start(); o.start();
+    o.connect(lp); lp.connect(srcGain);
+    srcNode = { stop: () => { o.stop(); l.stop(); }, disconnect: () => lp.disconnect() };
+    return;
+  }
+  if (kind === "voice") {
+    const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = 118;
+    const vib = ctx.createOscillator(); vib.type = "sine"; vib.frequency.value = 5.2;
+    const vibA = ctx.createGain(); vibA.gain.value = 3.4;
+    vib.connect(vibA); vibA.connect(o.frequency);
+    const sum = ctx.createGain(); sum.gain.value = 0.5;
+    const swept = [];
+    [[620, 9], [1200, 11], [2600, 13]].forEach(([f, q], i) => {
+      const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = f; bp.Q.value = q;
+      const g = ctx.createGain(); g.gain.value = [1, 0.6, 0.35][i];
+      o.connect(bp); bp.connect(g); g.connect(sum); swept.push(bp);
+    });
+    const vw = ctx.createOscillator(); vw.type = "sine"; vw.frequency.value = 0.23;
+    swept.forEach((bp, i) => { const a = ctx.createGain(); a.gain.value = [180, 420, 300][i]; vw.connect(a); a.connect(bp.frequency); });
+    o.start(); vib.start(); vw.start();
+    sum.connect(srcGain);
+    srcNode = { stop: () => { o.stop(); vib.stop(); vw.stop(); }, disconnect: () => sum.disconnect() };
+    return;
+  }
+  if (kind === "file") {
+    if (!fileBuf) { say("pick a wav …"); $("#srcFile").click(); return; }
+    const s = ctx.createBufferSource(); s.buffer = fileBuf; s.loop = true; s.start();
+    srcNode = s; s.connect(srcGain); return;
+  }
+  if (kind.startsWith("mic")) {
+    if (!window.isSecureContext) { say("mic needs https or localhost — run serve.mjs"); return; }
+    const id = kind.slice(4);                     // "mic:<deviceId>", or "" for default
+    /* audio only, deliberately: a webcam's microphone is just another
+       audioinput, and asking for no video means the camera never opens */
+    const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+    if (id) audio.deviceId = { exact: id };
+    navigator.mediaDevices.getUserMedia({ audio, video: false })
+      .then(async st => {
+        micStream = st;
+        const s = ctx.createMediaStreamSource(st);
+        srcNode = { stop: () => {}, disconnect: () => s.disconnect() };
+        s.connect(srcGain);
+        const label = st.getAudioTracks()[0]?.label || "input";
+        say(label.slice(0, 34) + " — wear headphones");
+        await refreshInputs();                    // labels only exist post-permission
+      })
+      .catch(e => say(e.name === "NotAllowedError" ? "mic permission denied" : "mic error: " + e.name));
+  }
+}
+
+/* Device labels are empty until the user has granted permission once, so the
+   list starts as a single "microphone…" entry and fills in afterwards. */
+async function refreshInputs() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  let devs = [];
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput"); }
+  catch (e) { return; }
+  const og = $("#inGroup"), sel = $("#srcSel"), keep = sel.value;
+  /* Windows exposes "communications" as an alias of a device already listed;
+     "default" is worth keeping, that one is just noise */
+  const named = devs.filter(d => d.label && d.deviceId !== "communications");
+  og.innerHTML = "";
+  if (!named.length) {
+    const o = el("option", null, "microphone…"); o.value = "mic"; og.appendChild(o);
+  } else {
+    named.forEach(d => {
+      const o = el("option", null, d.label.replace(/\s*\([0-9a-f:]{4,}\)\s*$/i, "").slice(0, 44));
+      o.value = "mic:" + d.deviceId;
+      og.appendChild(o);
+    });
+  }
+  if ([...sel.options].some(o => o.value === keep)) { sel.value = keep; return; }
+  /* the remembered pick, now that the real device ids exist */
+  if (savedSrc && [...sel.options].some(o => o.value === savedSrc)) { sel.value = savedSrc; savedSrc = null; return; }
+  /* The placeholder "mic" is REPLACED by real `mic:<deviceId>` entries the
+     moment permission lands, so a selection of plain "mic" stops existing and
+     the select silently falls back to its first option — a synthetic tone.
+     Anyone who asked for a live input gets one. */
+  if (/^mic/.test(keep)) {
+    const pref = [...og.querySelectorAll("option")].find(o => o.value === "mic:default") || og.querySelector("option");
+    if (pref) sel.value = pref.value;
+  }
+}
+async function powerOn() {
+  if (running) { powerOff(); return; }
+  ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume();
+  /* The fader reaches UNITY at the top. It used to be scaled by 0.5, so full
+     travel was only -6dB and the default sat at -12dB — with a mic at a normal
+     speaking level that is quiet enough that moving the fader feels like it
+     does nothing at all. The headroom belongs in srcGain, which has it. */
+  master = ctx.createGain(); master.gain.value = Number($("#masterVol").value);
+
+  /* The ladder taps the chain output, NOT the master — it is a meter, so it
+     has to show the signal, not how loud you happen to be monitoring. It used
+     to hang off master, which meant the monitor fader was baked into every
+     reading: at the default 0.5 the fader is 0.25, a flat -12dB on everything,
+     and turning the monitor down made the meter fall with it. A mic at a
+     normal speaking level landed around -35dBFS on a -48..0 ladder and lit
+     almost nothing. meterTap persists across rebuilds; chainOut does not. */
+  meterTap = ctx.createGain(); meterTap.gain.value = 1;
+  /* split so the ladder shows real stereo — one analyser can only ever show
+     a sum, and BALANCE / cross-feed are the whole point of having two */
+  const split = ctx.createChannelSplitter(2);
+  analyserL = ctx.createAnalyser(); analyserL.fftSize = 512;
+  analyserR = ctx.createAnalyser(); analyserR.fftSize = 512;
+  meterTap.connect(split);
+  split.connect(analyserL, 0);
+  split.connect(analyserR, 1);
+  master.connect(ctx.destination);
+  srcGain = ctx.createGain(); srcGain.gain.value = 0.7;
+  running = true;
+  $("#btnRun").classList.add("on"); $("#btnRun").setAttribute("aria-label", "stop preview");
+  makeSource($("#srcSel").value);
+  rebuildAudio();
+  lastT = performance.now();
+  loop();
+}
+function powerOff() {
+  running = false; teardownChain();
+  if (srcNode) { try { srcNode.stop && srcNode.stop(); } catch (e) {} try { srcNode.disconnect(); } catch (e) {} srcNode = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (master) { try { master.disconnect(); } catch (e) {} }
+  if (meterTap) { try { meterTap.disconnect(); } catch (e) {} meterTap = null; }
+  $("#btnRun").classList.remove("on"); $("#btnRun").setAttribute("aria-label", "start preview");
+  clearMeters(); say("");
+}
+function shapeVal(shape, ph) {
+  switch (shape) {
+    case "square": return ph < 0.5 ? 1 : -1;
+    case "sawtooth": return ph * 2 - 1;
+    case "random": return randHold(ph);
+    default: return Math.sin(ph * Math.PI * 2);
+  }
+}
+let rhLast = -1, rhVal = 0;
+function randHold(ph) {
+  const b = Math.floor(ph * 4);
+  if (b !== rhLast) { rhLast = b; rhVal = Math.random() * 2 - 1; }
+  return rhVal;
+}
+function loop() {
+  if (!running) return;
+  const now = performance.now(), dt = Math.min(0.1, (now - lastT) / 1000);
+  lastT = now;
+  const p = P(), handle = Number($("#handlePos").value);
+  shakeEnv = Math.max(0, shakeEnv - dt * 1.6);
+  let lfoSpeed = p.lfo.speed;
+  if (p.handle.on && p.handle.target === "lfo") lfoSpeed = clamp(p.lfo.speed + p.handle.depth * handle * p.lfo.speed, 0, 40);
+  lfoPhase = (lfoPhase + dt * lfoSpeed) % 1;
+
+  const apply = {};
+  const stack = (row, param, amt) => {
+    if (row == null || !param) return;
+    (apply[row + "|" + param] ||= { row, param, amt: 0 }).amt += amt;
+  };
+  if (p.handle.on && p.handle.target !== "lfo") stack(p.handle.row, p.handle.param, p.handle.depth * handle);
+  if (p.shake.on) stack(p.shake.row, p.shake.param, p.shake.depth * shakeEnv);
+  if (p.lfo.on) stack(p.lfo.row, p.lfo.param, p.lfo.depth * shapeVal(p.lfo.shape, (lfoPhase + p.lfo.phase) % 1));
+
+  Object.values(apply).forEach(({ row, param, amt }) => {
+    const fx = p.list[row], inst = built[row];
+    if (!fx || !inst) return;
+    const spec = EFFECTS[fx.effect].params[param]; if (!spec) return;
+    const [min, max] = spec;
+    const base = Object.prototype.hasOwnProperty.call(fx.params, param) ? fx.params[param] : spec[2];
+    inst.set(param, clamp(base + amt * (max - min), min, max));
+  });
+
+  drawMeters(dt);
+  $("#handleVal").textContent = Math.round(handle * 100) + "%";
+  requestAnimationFrame(loop);
+}
+function fireTrigger() {
+  const p = P();
+  if (!running) { say("hit audition first"); return; }
+  const row = p.trigger.on ? p.trigger.row : p.list.findIndex(f => f.effect === "SAMPLE");
+  const inst = built[row];
+  if (!inst || !inst.play) { say("no SAMPLE row in this preset"); return; }
+  const slot = state.samples[curSampleSlot], buf = sampleBufs[curSampleSlot];
+  if (!buf) { say("slot " + (curSampleSlot + 1) + " has no wav — load one in samples"); return; }
+  if (slot.playmode === "startstop") {
+    if (inst.isPlaying()) { inst.stop(); say("slot " + (curSampleSlot + 1) + " stopped"); }
+    else { inst.play(buf, true); say("slot " + (curSampleSlot + 1) + " looping"); }
+  } else { inst.play(buf, false); say("slot " + (curSampleSlot + 1) + " · " + slot.playmode); }
+}
+
+/* =========================================================================
+   FILE I/O
+   ========================================================================= */
+function pickSample(i, after) {
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "audio/wav,.wav,audio/*";
+  inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return;
+    const s = state.samples[i];
+    s.on = true; state.useSamples = true;
+    /* the name has to survive FAT and the server's filename guard */
+    if (!s.file || /^[1-4]\.wav$/.test(s.file)) s.file = f.name.replace(/[^A-Za-z0-9 ._-]/g, "_");
+    if (!/\.wav$/i.test(s.file)) s.file = s.file.replace(/\.[^.]*$/, "") + ".wav";
+    s.bytes = f.size;
+    try {
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      sampleSrc[i] = await ctx.decodeAudioData((await f.arrayBuffer()).slice(0));
+      await refitSlot(i);                   /* encodes, and decodes back for preview */
+    } catch (e) { say("could not decode " + f.name + " for preview"); }
+    renderAll(); if (after) after();
+  };
+  inp.click();
+}
+function download() {
+  const blob = new Blob([fmt(build(), 0) + "\n"], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "config.json";
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  say("saved config.json — copy it to the fx-mic disk and eject");
+}
+function importConfig(text) {
+  let cfg;
+  try { cfg = JSON.parse(text); } catch (e) { say("not valid json: " + e.message); return; }
+  state.name = cfg.name || "IMPORTED";
+  state.presets = [blankPreset(), blankPreset(), blankPreset(), blankPreset()];
+  state.useSamples = false;
+  state.samples.forEach((s, i) => Object.assign(s, { on:false, file:(i+1)+".wav", playmode:"oneshot", duck:null, bytes:0, fit:"orig" }));
+  (cfg.samples || []).forEach((s, idx) => {
+    const i = typeof s.pos === "number" ? s.pos : idx;
+    if (i < 0 || i >= MAX_SAMPLES) return;
+    state.useSamples = true;
+    Object.assign(state.samples[i], {
+      on: true, file: s.file || "",
+      playmode: PLAYMODES.includes(s.playmode) ? s.playmode : "oneshot",
+      duck: typeof s.duck === "number" ? s.duck : null
+    });
+  });
+  (cfg.presets || []).forEach((pr, idx) => {
+    const i = typeof pr.pos === "number" ? pr.pos : idx;
+    if (i < 0 || i >= MAX_PRESETS) return;
+    const p = state.presets[i];
+    p.enabled = true; p.name = pr.name || ""; p.comment = pr.comment || "";
+    p.list = (pr.list || []).map(e => {
+      const nm = String(e.effect || "").toUpperCase();
+      const known = EFFECTS[nm] ? nm : (nm === "EQUALISER" ? "EQUALIZER" : null);
+      if (!known) return null;
+      const params = {};
+      Object.keys(EFFECTS[known].params).forEach(n => { if (typeof e[n] === "number") params[n] = e[n]; });
+      if (known === "REVERB" && typeof e.spring === "number") params["spring-mix"] = e.spring;
+      return { effect: known, bus: e.BUS === 1 || e.BUS === 2 ? e.BUS : null, params };
+    }).filter(Boolean).slice(0, MAX_ROWS);
+    ["handle","shake","lfo"].forEach(k => {
+      const m = pr[k]; if (!m) return;
+      Object.assign(p[k], { on: true, row: m.row || 0, param: m.param || "", depth: typeof m.depth === "number" ? m.depth : 1 });
+      if (k === "handle" && m.target) p.handle.target = String(m.target);
+      /* mpy was ours, never TE's — fold any legacy value into depth so the
+         modulation amount survives, then never write the key again */
+      if (k === "lfo" && typeof m.mpy === "number" && m.mpy !== 1)
+        p.lfo.depth = clamp(p.lfo.depth * m.mpy, -1, 1);
+      if (k === "lfo") Object.assign(p.lfo, {
+        shape: LFO_SHAPES.includes(m.shape) ? m.shape : "sine",
+        phase: typeof m.phase === "number" ? m.phase : 0,
+        speed: typeof m.speed === "number" ? m.speed : 4
+      });
+    });
+    if (pr.trigger) { p.trigger.on = true; p.trigger.row = pr.trigger.row || 0; }
+  });
+  state.cur = Math.max(0, state.presets.findIndex(p => p.enabled));
+  renderAll();
+}
+
+const STARTER = {
+  name: "STARTER",
+  samples: [{ pos: 0, file: "1.wav", playmode: "oneshot", duck: 1.0 }],
+  presets: [
+    { pos: 0, name: "ECHO BOX", list: [
+        { effect: "HARMONY", pitch: 2.0, BUS: 2 },
+        { effect: "REVERB", time: 0.1, "dry-level": 1.0 },
+        { effect: "DELAY", time: 0.5, "dry-level": 0.0, echo: 0.5, BUS: 1 },
+        { effect: "SAMPLE", speed: 1.0 }],
+      handle: { row: 1, param: "time", depth: 0.6 },
+      shake: { row: 2, param: "echo", depth: 1.0 },
+      lfo: { row: 2, param: "echo", depth: 1.0, shape: "random", speed: 4.0, phase: 0 },
+      trigger: { row: 3 } },
+    { pos: 1, name: "PIXIE", list: [
+        { effect: "HARMONY", pitch: 2.0 },
+        { effect: "SAMPLE", speed: 2.0 },
+        { effect: "REVERB", time: 1.0, "spring-mix": 0.5 },
+        { effect: "DELAY", time: 0.1, echo: 0.5 }],
+      handle: { row: 0, param: "pitch", depth: -1.0 },
+      trigger: { row: 1 } },
+    { pos: 2, name: "BAD RECEPTION", comment: "handle sweeps the lowpass shut", list: [
+        { effect: "DIST", amount: 14.0, mix: 1.0 },
+        { effect: "LOWPASS", cutoff: 0.55, Q: 0.4 },
+        { effect: "RING", frequency: 90.0, mix: 0.25 },
+        { effect: "SAMPLE", speed: 1.0 }],
+      handle: { row: 1, param: "cutoff", depth: -0.8 },
+      shake: { row: 2, param: "mix", depth: 1.0 },
+      trigger: { row: 3 } },
+    { pos: 3, name: "SPRING", list: [
+        { effect: "HIGHPASS", cutoff: 0.12 },
+        { effect: "REVERB", time: 0.6, "spring-mix": 0.85, "wet-level": 0.7, "dry-level": 0.8 },
+        { effect: "SAMPLE", speed: 1.0 }],
+      handle: { row: 1, param: "wet-level", depth: 0.9 },
+      trigger: { row: 2 } }
+  ]
+};
+
+/* =========================================================================
+   WIRING
+   ========================================================================= */
+function renderAll() { renderHead(); renderRack(); renderTrigger(); renderOut(); rebuildAudio(); }
+
+$("#presetPick").onchange = e => { state.cur = Number(e.target.value); renderAll(); };
+$("#packName").oninput = e => { state.name = e.target.value; renderOut(); };
+$("#presetName").oninput = e => { P().name = e.target.value; P().enabled = P().enabled || !!P().list.length; renderHead(); renderOut(); };
+
+$("#btnChecks").onclick = checksSheet;
+$("#btnPush").onclick = pushDevice;
+/* the disk comes and goes while the page is open — and we eject it ourselves,
+   so the button has to notice its own handiwork */
+pollDisk();
+setInterval(pollDisk, 4000);
+window.addEventListener("focus", pollDisk);
+$("#btnMore").onclick = e => moreMenu(e.currentTarget);
+
+$("#fileImport").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(importConfig); e.target.value = ""; };
+$("#btnRun").onclick = powerOn;
+$("#srcSel").onchange = () => { if (running) makeSource($("#srcSel").value); saveNow(); };
+async function takeSourceWav(f) {
+  try {
+    ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+    fileBuf = await ctx.decodeAudioData(await f.arrayBuffer());
+  } catch (err) { say("could not decode " + f.name); return; }
+  $("#srcSel").value = "file";
+  $("#dropName").textContent = f.name; $("#dropName").title = f.name;
+  if (running) makeSource("file");
+  say(Math.round(fileBuf.duration * 10) / 10 + "s loaded");
+}
+$("#srcFile").onchange = e => { const f = e.target.files[0]; if (f) takeSourceWav(f); e.target.value = ""; };
+$("#btnInput").onclick = () => $("#srcFile").click();
+$("#btnImport").onclick = () => $("#fileImport").click();
+
+/* a dropped file goes where its extension says: audio becomes the audition
+   source, json is a config to load. Dropping anywhere works; the zone is just
+   the visible affordance. */
+function routeDrop(f) {
+  if (!f) return;
+  if (/\.json$/i.test(f.name) || f.type === "application/json") { f.text().then(importConfig); return; }
+  if (/\.(wav|mp3|ogg|flac|m4a|aac|webm)$/i.test(f.name) || /^audio\//.test(f.type)) { takeSourceWav(f); return; }
+  say("not a wav or a config.json");
+}
+const zone = $("#auditionPanel");
+["dragenter", "dragover"].forEach(ev => window.addEventListener(ev, e => {
+  if (![...(e.dataTransfer?.types || [])].includes("Files")) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = "copy"; zone.classList.add("over");
+}));
+["dragleave", "dragend"].forEach(ev => window.addEventListener(ev, e => {
+  if (e.relatedTarget) return;            // still inside the window
+  zone.classList.remove("over");
+}));
+window.addEventListener("drop", e => {
+  if (![...(e.dataTransfer?.types || [])].includes("Files")) return;
+  e.preventDefault(); zone.classList.remove("over");
+  routeDrop(e.dataTransfer.files[0]);
+});
+$("#masterVol").oninput = e => {
+  if (master) master.gain.value = Number(e.target.value);
+  $("#volVal").textContent = Math.round(e.target.value * 100);
+};
+/* the readout used to live only inside the audio loop, so the handle read 0%
+   forever with the preview stopped */
+$("#handlePos").oninput = e => { $("#handleVal").textContent = Math.round(e.target.value * 100) + "%"; };
+$("#btnCustom").onclick = () => { state.useSamples = !state.useSamples; renderTrigger(); renderOut(); };
+$("#btnShake").onclick = () => { shakeEnv = 1; };
+/* All four slots are on screen, so selecting and firing are the same gesture.
+   The device hides three behind the green button; there is no reason to here. */
+function renderTrigger() {
+  const host = $("#slots"); host.innerHTML = "";
+  const custom = state.useSamples;
+  const tog = $("#btnCustom");
+  tog.textContent = custom ? "custom" : "factory";
+  tog.className = "chip" + (custom ? " h" : "");
+  tog.title = custom ? "writing a samples block — click to use the device's own four instead"
+                     : "using the device's own four samples — click to write your own";
+
+  /* The preview plays a slot through the SAMPLE effect in the chain, exactly
+     as the device fires the SAMPLE row — so with no SAMPLE row there is
+     nothing to play through. The button used to look live and do nothing but
+     emit a one-line status message; now the constraint is visible where you
+     click, the same way the add menu greys out an effect already in use. */
+  const pr = P();
+  const sampleRow = pr.trigger.on ? pr.trigger.row : pr.list.findIndex(f => f.effect === "SAMPLE");
+  const canFire = sampleRow >= 0 && pr.list[sampleRow] && pr.list[sampleRow].effect === "SAMPLE";
+
+  /* SHAKE fires the gesture the device's accelerometer makes, decaying over
+     ~0.6s — but only onto whatever `shake` targets. With nothing assigned it
+     is a button that does nothing, so it says so rather than staying silent. */
+  const sb = $("#btnShake");
+  sb.disabled = !pr.shake.on;
+  sb.title = pr.shake.on
+    ? "shake — modulates " + (pr.shake.param || "?") + " on row " + pr.shake.row
+      + " by " + pr.shake.depth + ", the way shaking the device does. Keyboard: s"
+    : "nothing is assigned to shake in this preset — add it from the mod chip on any parameter";
+
+  state.samples.forEach((sl, i) => {
+    const loaded = !!sampleBufs[i];
+    const row = el("div", "srow" + (i === curSampleSlot ? " on" : "") + (loaded ? " loaded" : "")
+                              + (custom && !sl.on ? " muted" : ""));
+    const dot = el("button", "sdot", String(i + 1));
+    dot.title = "select slot " + (i + 1);
+    dot.onclick = () => { curSampleSlot = i; renderTrigger(); };
+    row.appendChild(dot);
+
+    const name = el("button", "sname", loaded ? sl.file : (custom ? sl.file : "factory " + (i + 1)));
+    name.title = loaded ? sl.file + " · click to replace" : "load a wav into slot " + (i + 1);
+    name.onclick = () => pickSample(i, renderTrigger);
+    if (!loaded) name.classList.add("empty");
+    row.appendChild(name);
+
+    const go = el("button", "sgo", "▶");
+    go.disabled = !loaded || !canFire;
+    go.title = !loaded ? "load a wav into slot " + (i + 1)
+      : !canFire ? "this preset has no SAMPLE row — the trigger has nothing to play through"
+      : "play slot " + (i + 1) + " through the chain";
+    go.onclick = () => { curSampleSlot = i; renderTrigger(); fireTrigger(); };
+    row.appendChild(go);
+    host.appendChild(row);
+  });
+
+  /* the selected slot's file settings, inline — this replaced a whole sheet */
+  const d = $("#slotDetail"); d.innerHTML = "";
+  if (!custom) {
+    const n = el("span", "tiny sdnote", "the device's own samples · no samples block is written");
+    d.appendChild(n);
+    return;
+  }
+  const sl = state.samples[curSampleSlot];
+
+  const pm = el("select", "fld");
+  PLAYMODES.forEach(v => { const o = el("option", null, v); o.value = v; if (v === sl.playmode) o.selected = true; pm.appendChild(o); });
+  pm.onchange = () => { sl.playmode = pm.value; renderOut(); };
+  d.appendChild(pm);                       /* its own row: "oneshot" clips beside chips */
+
+  const r2 = el("div", "sdrow");
+  const dk = el("button", "chip" + (sl.duck != null ? " h" : ""), "duck");
+  dk.title = "duck the mic while this plays — needs firmware 1.0.9+";
+  dk.onclick = () => { sl.duck = sl.duck == null ? 1.0 : null; renderTrigger(); renderOut(); };
+  const inc = el("button", "chip" + (sl.on ? " t" : ""), sl.on ? "in" : "out");
+  inc.title = sl.on ? "this slot is written to the file" : "this slot is left out of the file";
+  inc.onclick = () => { sl.on = !sl.on; renderTrigger(); renderOut(); };
+  r2.append(dk, inc);
+  d.appendChild(r2);
+
+  /* quality only means anything once there is audio to re-render */
+  if (sampleSrc[curSampleSlot]) {
+    const q = el("select", "fld");
+    FITS.forEach(ft => {
+      const o = el("option", null, ft.label); o.value = ft.id;
+      if (ft.id === sl.fit) o.selected = true; q.appendChild(o);
+    });
+    q.title = "re-render this sample smaller — the preview plays the re-rendered bytes, so you hear exactly what the device gets";
+    q.onchange = async () => { sl.fit = q.value; await refitSlot(curSampleSlot); renderAll(); fireTrigger(); };
+    d.appendChild(q);
+
+    const fa = el("button", "pbtn wide", "fit all to 1 mb");
+    fa.title = "step every loaded slot down together until the four of them fit the budget";
+    fa.onclick = fitAll;
+    d.appendChild(fa);
+  }
+
+  const total = state.samples.reduce((a, x) => a + (x.on ? x.bytes : 0), 0);
+  const over = total > SIZE_BUDGET;
+  const bar = el("div", "bar" + (over ? " over" : ""));
+  const fillb = el("i"); fillb.style.width = Math.min(100, total / SIZE_BUDGET * 100) + "%";
+  bar.appendChild(fillb);
+  const cap = el("span", "tiny sdnote" + (over ? " over" : ""),
+    total ? kb(total) + " of ~1 MB" + (over ? " — over" : "") : "≈ 1 MB for all four");
+  d.append(bar, cap);
+}
+
+
+window.addEventListener("keydown", e => {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if (e.key === "Escape") closePop();
+  if (e.key === " ") { e.preventDefault(); fireTrigger(); }
+  if (/^[1-4]$/.test(e.key) && e.shiftKey) { curSampleSlot = +e.key - 1; renderTrigger(); fireTrigger(); }
+  if (e.key.toLowerCase() === "s") shakeEnv = 1;
+  if (e.key >= "1" && e.key <= "4") { state.cur = Number(e.key) - 1; renderAll(); }
+});
+
+if (!window.isSecureContext) {
+  $("#srcSel").querySelector('option[value="mic"]').textContent = "mic (needs https)";
+} else {
+  refreshInputs();                                      // names appear if permission is already granted
+  navigator.mediaDevices?.addEventListener?.("devicechange", () => refreshInputs());
+}
+buildMeters();
+renderTrigger();
+/* a reload must never cost a patch — the starter is the empty-slate fallback,
+   not what you get back after refreshing */
+if (!restoreSaved()) importConfig(JSON.stringify(STARTER));
+</script>
+</body>
+</html>

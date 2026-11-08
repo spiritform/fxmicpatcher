@@ -1,0 +1,13 @@
+# Written by the /device push route every time a patch goes to the hardware:
+# a full copy of the 1MB volume, so each one holds a config.json and any wavs.
+# Session artifacts and user audio, not source.
+device-backup-*/
+config.device-backup-*.json
+
+# the staging file the push used before it carried samples itself
+config.staged.json
+
+# Working notes for the build: design decisions with their reasoning, and the
+# traps already hit. Kept locally because it is the most useful file here, but
+# it quotes conversations verbatim, which is nobody else's business.
+CLAUDE.md
