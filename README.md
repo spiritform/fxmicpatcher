@@ -159,9 +159,13 @@ are the rough edges you should know about first:
 - **`MAX_ROWS = 4` is an inference, not documented.** It comes from TE's own
   examples never exceeding four effects. Untested on hardware — if a five-effect
   chain loads, raise the constant.
-- **`EQUALIZER` vs `EQUALISER` is unresolved.** TE's web guide spells it with an
-  S, the on-device readme without. The tool emits `EQUALIZER` and imports
-  either; if the device ignores an EQ row, try the other.
+- **`EQUALISER` vs `EQUALIZER`.** TE's own two documents disagree: the web
+  guide spells it with an S, the on-device readme without. The tool emits
+  **`EQUALISER`** — the guide is TE's maintained public reference and matches
+  the British spelling they use throughout — and imports either. Their guide
+  also says *"mind case sensitivity"*, so the device matches names exactly and
+  one of the two spellings is simply wrong. If an EQ row is ignored, try the
+  other; the checks panel flags this on every EQ row.
 - **Needs firmware 1.1.2.** The version list jumps 1.0.8 straight to 1.1.1, so a
   device on 1.0.8 sits *below* the 1.0.9 floor and `duck` and filter `Q` will
   genuinely fail there.

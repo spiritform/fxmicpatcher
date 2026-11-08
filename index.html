@@ -807,7 +807,7 @@ const EFFECTS = {
   DIST:      { params: {
       "amount": [0, 40, 8, 1], "highpass-cutoff": [0, 1, 0, 1],
       "lowpass-cutoff": [0, 1, 1, 1], "mix": [0, 1, 1, 1] } },
-  EQUALIZER: { params: { "cutoff": [0, 1, 0.5, 1], "Q": [0, 1, 0.3, 1], "gain": [-1, 1, 0, 1] } },
+  EQUALISER: { params: { "cutoff": [0, 1, 0.5, 1], "Q": [0, 1, 0.3, 1], "gain": [-1, 1, 0, 1] } },
   HARMONY:   { params: { "dry-level": [0, 1, 0.5, 1], "pitch": [0.5, 2, 1.5, 1] } },
   HIGHPASS:  { params: { "cutoff": [0, 1, 0, 1], "Q": [0, 1, 0.2, 1] } },
   LOWPASS:   { params: { "cutoff": [0, 1, 1, 1], "Q": [0, 1, 0.2, 1] } },
@@ -831,7 +831,7 @@ const GROUPS = {
   DIST:      [["drive", ["amount"]],
               ["tone",  ["highpass-cutoff", "lowpass-cutoff"]],
               ["mix",   ["mix"]]],
-  EQUALIZER: [["band", ["cutoff", "Q", "gain"]]],
+  EQUALISER: [["band", ["cutoff", "Q", "gain"]]],
   HARMONY:   [["pitch", ["pitch"]], ["mix", ["dry-level"]]],
   HIGHPASS:  [["filter", ["cutoff", "Q"]]],
   LOWPASS:   [["filter", ["cutoff", "Q"]]],
@@ -1555,8 +1555,8 @@ function collectIssues() {
     if (p.list.some(f => f.effect === "SAMPLE") && !p.trigger.on)
       add("warn", at + "has a SAMPLE row but no trigger — the white button may fire nothing.");
     p.list.forEach((fx, ri) => {
-      if (fx.effect === "EQUALIZER")
-        add("warn", at + "row " + ri + ": the web guide spells this <code>EQUALISER</code>, the on-device readme <code>EQUALIZER</code>. if it is ignored, try the other.");
+      if (fx.effect === "EQUALISER")
+        add("warn", at + "row " + ri + ": spelled <code>EQUALISER</code>, per TE's web guide. Their on-device readme says <code>EQUALIZER</code> — the two disagree, and the device matches names exactly. If this row is ignored, try the other.");
       if ((fx.effect === "LOWPASS" || fx.effect === "HIGHPASS") && "Q" in fx.params)
         add("warn", at + "row " + ri + ": <code>Q</code> on " + fx.effect + " needs firmware 1.0.9+.");
       Object.keys(fx.params).forEach(n => {
@@ -1606,7 +1606,7 @@ function collectIssues() {
         add("warn", row + "<code>mix</code> is 0 — mix is a wet/dry blend, so the signal bypasses the distortion entirely however high <code>amount</code> is.");
       if (fx.effect === "DIST" && v("amount") === 0)
         add("warn", row + "<code>amount</code> is 0 — no drive, so there is nothing to hear.");
-      if (fx.effect === "EQUALIZER" && Math.abs(v("gain")) < 0.08)
+      if (fx.effect === "EQUALISER" && Math.abs(v("gain")) < 0.08)
         add("warn", row + "<code>gain</code> is " + round(v("gain")) + " (" + round(v("gain") * 24) + "dB) — too small to hear. It runs ±1 for ±24dB.");
 
       Object.keys(fx.params).forEach(n => {
@@ -1962,7 +1962,7 @@ function makeFx(effect, params) {
     case "BALANCE": return fxBalance(p);
     case "LOWPASS": return fxFilter("lowpass", p);
     case "HIGHPASS": return fxFilter("highpass", p);
-    case "EQUALIZER": return fxEQ(p);
+    case "EQUALISER": return fxEQ(p);
     case "DIST": return fxDist(p);
     case "DELAY": return fxDelay(p);
     case "REVERB": return fxReverb(p);
@@ -2286,7 +2286,7 @@ function importConfig(text) {
     p.enabled = true; p.name = pr.name || ""; p.comment = pr.comment || "";
     p.list = (pr.list || []).map(e => {
       const nm = String(e.effect || "").toUpperCase();
-      const known = EFFECTS[nm] ? nm : (nm === "EQUALISER" ? "EQUALIZER" : null);
+      const known = EFFECTS[nm] ? nm : (nm === "EQUALIZER" ? "EQUALISER" : null);
       if (!known) return null;
       const params = {};
       Object.keys(EFFECTS[known].params).forEach(n => { if (typeof e[n] === "number") params[n] = e[n]; });
